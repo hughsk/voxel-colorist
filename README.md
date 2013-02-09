@@ -3,7 +3,7 @@
 A module for colour grading your voxels in [voxel.js](http://voxeljs.com), for
 use with [voxel-pp](http://github.com/hughsk/voxel-pp).
 
-[Check out the demo here](http://hughsk.github.com/voxel-colorist)
+[Check out the demo here](http://hughsk.github.com/voxel-colorist/demo)
 
 This is done using a 3D colour lookup table (as detailed
 [here](http://youtu.be/rfQ8rKGTVlg?t=24m31s)
