@@ -23,7 +23,7 @@
   "author": "Hugh Kennedy <hughskennedy@gmail.com> (http://hughskennedy.com)",
   "license": "MIT",
   "dependencies": {
-    "lut": "0.1.x"
+    "lut": "0.2.x"
   },
   "devDependencies": {
     "minecraft-skin": "0.0.1",
