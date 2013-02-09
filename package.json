@@ -1,0 +1,39 @@
+{
+  "name": "voxel-colorist",
+  "version": "0.0.1",
+  "description": "Colour grading post-processing shader for Voxel.js",
+  "main": "index.js",
+  "scripts": {
+    "prepublish": "node_modules/.bin/browserify demo/index.js -o demo/bundle.js",
+    "start": "npm run prepublish && serve demo -p 8080"
+  },
+  "keywords": [
+    "voxel",
+    "color",
+    "colour",
+    "grading",
+    "tone",
+    "map",
+    "texture",
+    "LUT",
+    "fragment",
+    "effects",
+    "browserify"
+  ],
+  "author": "Hugh Kennedy <hughskennedy@gmail.com> (http://hughskennedy.com)",
+  "license": "MIT",
+  "dependencies": {
+    "lut": "0.1.x"
+  },
+  "devDependencies": {
+    "minecraft-skin": "0.0.1",
+    "voxel": "~0.1.4",
+    "voxel-highlight": "0.0.1",
+    "voxel-debris": "0.0.4",
+    "toolbar": "0.0.5",
+    "voxel-engine": "~0.5.3",
+    "voxel-pp": "0.0.3",
+    "browserify": "~1.17.3",
+    "serve": "~1.2.0"
+  }
+}

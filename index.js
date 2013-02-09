@@ -12,22 +12,66 @@ function Colorist(processor, options) {
   options = options || {}
   options.table = options.table || lut(33, 33, 33)
 
+  this.pass = new processor.ShaderPass(this.shader)
+  processor.addPass(this.pass)
+
+  this.table(options.table)
+};
+
+Colorist.prototype.snapshot = function(original) {
+  var parent = game.renderer.domElement
+    , canvas = document.createElement('canvas')
+    , ctx = canvas.getContext('2d')
+    , image = new Image
+
+  if (original) {
+    game.renderer.render(game.scene, game.camera)
+  } else {
+    game.render()
+  }
+
+  canvas.width = parent.width
+  canvas.height = parent.height
+  canvas.getContext('2d').drawImage(parent, 0, 0)
+
+  if (original) {
+    lut(33, 33, 33, canvas)
+  } else {
+    canvas.getContext('2d').drawImage(this.tableTexture.image, 0, 0)
+  }
+
+  image.src = canvas.toDataURL()
+
+  return image
+};
+
+Colorist.prototype.table = function(table) {
+  var self = this
+    , canvas
+
   function ready() {
-    var shaderPass = new processor.ShaderPass(self.shader)
-    processor.addPass(shaderPass)
-    self.tableTexture = shaderPass.uniforms.tColorist.value = new THREE.Texture(canvas)
-    self.tableTexture.magFilter = THREE.NearestFilter;
-    self.tableTexture.minFilter = THREE.LinearMipMapLinearFilter;
-    self.tableTexture.wrapT     = THREE.RepeatWrapping;
-    self.tableTexture.wrapS     = THREE.RepeatWrapping;
-    self.tableTexture.needsUpdate = true
+    var pass = self.pass;
+
+    if (self.tableTexture) {
+      self.tableTexture.image = canvas;
+    } else {
+      self.tableTexture = new self.THREE.Texture(canvas);
+    }
+
+    self.tableTexture.magFilter = self.THREE.NearestFilter;
+    self.tableTexture.minFilter = self.THREE.LinearMipMapLinearFilter;
+    self.tableTexture.wrapT     = self.THREE.RepeatWrapping;
+    self.tableTexture.wrapS     = self.THREE.RepeatWrapping;
+    self.tableTexture.needsUpdate = true;
+
+    pass.uniforms.tColorist.value = self.tableTexture;
   };
 
-  if (typeof options.table === 'string' || options.table.nodeName === 'img') {
-    canvas = imageToCanvas(options.table, ready)
+  if (typeof table === 'string' || table.nodeName === 'img') {
+    canvas = imageToCanvas(table, ready);
   } else {
-    canvas = clipCanvas(options.table)
-    ready()
+    canvas = clipCanvas(table);
+    ready();
   }
 };
 

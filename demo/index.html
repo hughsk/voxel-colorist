@@ -1,0 +1,77 @@
+<!DOCTYPE HTML>
+<html lang="en">
+  <head>
+    <title>Voxel Engine</title>
+    <meta charset="utf-8">
+    <style type="text/css">
+      body {
+        font-family: Monospace;
+        font-size: 12px;
+        background-color: #f0f0f0;
+        margin: 0px;
+        overflow: hidden;
+      }
+      #container {
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #instructions {
+        position:fixed;
+        top:0; right:0;
+        padding:15px 20px;
+        margin:10px;
+        width:300px;
+        background:rgba(255,255,255,0.75);
+        font-family:'Helvetica Neue', Helvetica, Arial, sans-serif;
+        font-weight:300;
+        list-style-type:none;
+        text-align:right;
+      }
+      #instructions li { padding:5px 0; }
+      #instructions a { font-weight:bold; }
+      #stats { bottom: 0px; right: 0px; }
+      .bar-tab { width:100%; line-height:25px; }
+      .errorMessage { text-align: center; width: 200px; margin: 20px auto; }
+    </style>
+    <link href="ratchet.css" media="screen" rel="stylesheet" type="text/css" />
+  </head>
+  <body>
+    <div id="container"></div>
+    <ul id="instructions">
+      <li>Press numbers 1-8 to change preset</li>
+      <li>Press the tilde key (~) to take a screenshot</li>
+      <li>Recolour the screenshots, then drag them back on to the game to load.</li>
+      <li><a href="http://github.com/hughsk/voxel-colorist">Details on Github</a></li>
+    </ul>
+    <nav class="bar-tab" id="tools" >
+      <ul class="tab-inner">
+        <li class="tab-item active">
+          <div class="tab-label">normal</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">posterized</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">odd</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">black+white</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">voxelgram</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">dusk</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">invert</div>
+        </li>
+        <li class="tab-item">
+          <div class="tab-label">light</div>
+        </li>
+      </ul>
+    </nav>
+    <script type="text/javascript" src="bundle.js"></script>
+  </body>
+</html>
