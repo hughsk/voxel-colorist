@@ -40,7 +40,7 @@ var composer = require('voxel-pp')(game)
 // Add colour grading
 var colorist = require('voxel-colorist')(composer)
 
-// Load a 32*32*32 colour table
+// Load a 33*33*33 colour table
 var img = new Image
 img.onload = function() {
   colorist.table(img)
