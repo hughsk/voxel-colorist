@@ -1,7 +1,7 @@
 {
   "name": "voxel-colorist",
   "version": "0.0.1",
-  "description": "Colour grading post-processing shader for Voxel.js",
+  "description": "Colour grading post-processing shader for voxel.js",
   "main": "index.js",
   "scripts": {
     "prepublish": "node_modules/.bin/browserify demo/index.js -o demo/bundle.js",
