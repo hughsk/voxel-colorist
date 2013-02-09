@@ -11,6 +11,8 @@ and [here](http://http.developer.nvidia.com/GPUGems2/gpugems2_chapter24.html)),
 which is surprisingly simple and easy to work with.
 [The Witness Blog](http://the-witness.net/news/2012/08/fun-with-in-engine-color-grading/) has a good explanation too.
 
+![voxel-colorist](https://raw.github.com/hughsk/voxel-colorist/master/screenshot.jpg)
+
 ## Installation ##
 
 ``` bash
