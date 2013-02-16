@@ -23,7 +23,8 @@
   "author": "Hugh Kennedy <hughskennedy@gmail.com> (http://hughskennedy.com)",
   "license": "MIT",
   "dependencies": {
-    "lut": "0.2.x"
+    "lut": "0.2.x",
+    "webgl-texture3d": "0.x.x"
   },
   "devDependencies": {
     "minecraft-skin": "0.0.1",
