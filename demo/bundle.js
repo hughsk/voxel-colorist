@@ -1,1198 +1,102 @@
-(function(){var require = function (file, cwd) {
-    var resolved = require.resolve(file, cwd || '/');
-    var mod = require.modules[resolved];
-    if (!mod) throw new Error(
-        'Failed to resolve module ' + file + ', tried ' + resolved
-    );
-    var cached = require.cache[resolved];
-    var res = cached? cached.exports : mod();
-    return res;
-};
+;(function(e,t,n,r){function i(r){if(!n[r]){if(!t[r]){if(e)return e(r);throw new Error("Cannot find module '"+r+"'")}var s=n[r]={exports:{}};t[r][0](function(e){var n=t[r][1][e];return i(n?n:e)},s,s.exports)}return n[r].exports}for(var s=0;s<r.length;s++)i(r[s]);return i})(typeof require!=="undefined"&&require,{1:[function(require,module,exports){var createGame = require('voxel-engine')
+var voxel = require('voxel')
+var toolbar = require('toolbar')
+var player = require('voxel-player')
+var presetSelector = toolbar({el: '#tools'})
 
-require.paths = [];
-require.modules = {};
-require.cache = {};
-require.extensions = [".js",".coffee",".json"];
+var game = window.game = createGame({
+  generate: voxel.generator.Valley,
+  chunkDistance: 2,
+  materials: [
+    ['grass', 'dirt', 'grass_dirt'],
+    'grass'
+  ],
+  texturePath: 'textures/',
+  worldOrigin: [0, 0, 0],
+  controls: { discreteFire: true }
+})
 
-require._core = {
-    'assert': true,
-    'events': true,
-    'fs': true,
-    'path': true,
-    'vm': true
-};
+// Load voxel-pp, then voxel-colorist
+var composer = require('voxel-pp')(game)
+var colorist = require('../')(composer)
 
-require.resolve = (function () {
-    return function (x, cwd) {
-        if (!cwd) cwd = '/';
-        
-        if (require._core[x]) return x;
-        var path = require.modules.path();
-        cwd = path.resolve('/', cwd);
-        var y = cwd || '/';
-        
-        if (x.match(/^(?:\.\.?\/|\/)/)) {
-            var m = loadAsFileSync(path.resolve(y, x))
-                || loadAsDirectorySync(path.resolve(y, x));
-            if (m) return m;
-        }
-        
-        var n = loadNodeModulesSync(x, y);
-        if (n) return n;
-        
-        throw new Error("Cannot find module '" + x + "'");
-        
-        function loadAsFileSync (x) {
-            x = path.normalize(x);
-            if (require.modules[x]) {
-                return x;
-            }
-            
-            for (var i = 0; i < require.extensions.length; i++) {
-                var ext = require.extensions[i];
-                if (require.modules[x + ext]) return x + ext;
-            }
-        }
-        
-        function loadAsDirectorySync (x) {
-            x = x.replace(/\/+$/, '');
-            var pkgfile = path.normalize(x + '/package.json');
-            if (require.modules[pkgfile]) {
-                var pkg = require.modules[pkgfile]();
-                var b = pkg.browserify;
-                if (typeof b === 'object' && b.main) {
-                    var m = loadAsFileSync(path.resolve(x, b.main));
-                    if (m) return m;
-                }
-                else if (typeof b === 'string') {
-                    var m = loadAsFileSync(path.resolve(x, b));
-                    if (m) return m;
-                }
-                else if (pkg.main) {
-                    var m = loadAsFileSync(path.resolve(x, pkg.main));
-                    if (m) return m;
-                }
-            }
-            
-            return loadAsFileSync(x + '/index');
-        }
-        
-        function loadNodeModulesSync (x, start) {
-            var dirs = nodeModulesPathsSync(start);
-            for (var i = 0; i < dirs.length; i++) {
-                var dir = dirs[i];
-                var m = loadAsFileSync(dir + '/' + x);
-                if (m) return m;
-                var n = loadAsDirectorySync(dir + '/' + x);
-                if (n) return n;
-            }
-            
-            var m = loadAsFileSync(x);
-            if (m) return m;
-        }
-        
-        function nodeModulesPathsSync (start) {
-            var parts;
-            if (start === '/') parts = [ '' ];
-            else parts = path.normalize(start).split('/');
-            
-            var dirs = [];
-            for (var i = parts.length - 1; i >= 0; i--) {
-                if (parts[i] === 'node_modules') continue;
-                var dir = parts.slice(0, i + 1).join('/') + '/node_modules';
-                dirs.push(dir);
-            }
-            
-            return dirs;
-        }
-    };
-})();
+// Change presets using the toolbar
+presetSelector.on('select', function(material) {
+  colorist.table('colors/' + material + '.png')
+})
 
-require.alias = function (from, to) {
-    var path = require.modules.path();
-    var res = null;
-    try {
-        res = require.resolve(from + '/package.json', '/');
-    }
-    catch (err) {
-        res = require.resolve(from, '/');
-    }
-    var basedir = path.dirname(res);
-    
-    var keys = (Object.keys || function (obj) {
-        var res = [];
-        for (var key in obj) res.push(key);
-        return res;
-    })(require.modules);
-    
-    for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        if (key.slice(0, basedir.length + 1) === basedir + '/') {
-            var f = key.slice(basedir.length);
-            require.modules[to + f] = require.modules[basedir + f];
-        }
-        else if (key === basedir) {
-            require.modules[to] = require.modules[basedir];
-        }
-    }
-};
+// Take screenshots with the tilde (~) key
+// Using SHIFT+~ will take an unprocessed image
+var image
+window.addEventListener('keydown', function(e) {
+  if (e.keyCode !== 192) return
+  if (image) document.body.removeChild(image)
+  image = colorist.snapshot(e.shiftKey)
 
-(function () {
-    var process = {};
-    var global = typeof window !== 'undefined' ? window : {};
-    var definedProcess = false;
-    
-    require.define = function (filename, fn) {
-        if (!definedProcess && require.modules.__browserify_process) {
-            process = require.modules.__browserify_process();
-            definedProcess = true;
-        }
-        
-        var dirname = require._core[filename]
-            ? ''
-            : require.modules.path().dirname(filename)
-        ;
-        
-        var require_ = function (file) {
-            var requiredModule = require(file, dirname);
-            var cached = require.cache[require.resolve(file, dirname)];
+  image.style.width = '300px'
+  image.style.height = 'auto'
+  image.style.position = 'absolute'
+  image.style.top = '10px'
+  image.style.left = '10px'
+  image.style.border = '5px solid rgba(50, 50, 50, 0.8)'
+  image.style.zIndex = 999
+  image.style.opacity = 0.9
 
-            if (cached && cached.parent === null) {
-                cached.parent = module_;
-            }
+  document.body.appendChild(image)
+})
 
-            return requiredModule;
-        };
-        require_.resolve = function (name) {
-            return require.resolve(name, dirname);
-        };
-        require_.modules = require.modules;
-        require_.define = require.define;
-        require_.cache = require.cache;
-        var module_ = {
-            id : filename,
-            filename: filename,
-            exports : {},
-            loaded : false,
-            parent: null
-        };
-        
-        require.modules[filename] = function () {
-            require.cache[filename] = module_;
-            fn.call(
-                module_.exports,
-                require_,
-                module_,
-                module_.exports,
-                dirname,
-                filename,
-                process,
-                global
-            );
-            module_.loaded = true;
-            return module_.exports;
-        };
-    };
-})();
+// Drag/drop images onto the game to load
+// a new palette
+document.body.ondragover = function(e) {
+  return e.preventDefault() && false
+}
+document.body.ondrop = function(e) {
+  e.preventDefault()
+  e.stopPropagation()
 
+  if (!e.dataTransfer) return false
 
-require.define("path",function(require,module,exports,__dirname,__filename,process,global){function filter (xs, fn) {
-    var res = [];
-    for (var i = 0; i < xs.length; i++) {
-        if (fn(xs[i], i, xs)) res.push(xs[i]);
-    }
-    return res;
+  var file = e.dataTransfer.files[0]
+
+  if (!file) return false
+  if (!file.type.match(/image/)) return false
+
+  var reader = new FileReader
+  reader.onload = function(e) {
+    colorist.table(e.target.result)
+  };
+  reader.readAsDataURL(file)
+  return false;
 }
 
-// resolves . and .. elements in a path array with directory names there
-// must be no slashes, empty elements, or device names (c:\) in the array
-// (so also no leading and trailing slashes - it does not distinguish
-// relative and absolute paths)
-function normalizeArray(parts, allowAboveRoot) {
-  // if the path tries to go above the root, `up` ends up > 0
-  var up = 0;
-  for (var i = parts.length; i >= 0; i--) {
-    var last = parts[i];
-    if (last == '.') {
-      parts.splice(i, 1);
-    } else if (last === '..') {
-      parts.splice(i, 1);
-      up++;
-    } else if (up) {
-      parts.splice(i, 1);
-      up--;
-    }
-  }
+var container = document.querySelector('#container')
 
-  // if the path is allowed to go above the root, restore leading ..s
-  if (allowAboveRoot) {
-    for (; up--; up) {
-      parts.unshift('..');
-    }
-  }
+game.appendTo(container)
 
-  return parts;
-}
+// create the player from a minecraft skin file and tell the
+// game to use it as the main player
+var createPlayer = player(game)
+var substack = createPlayer('substack.png')
+substack.possess()
+substack.yaw.position.set(2, 14, 4)
 
-// Regex to split a filename into [*, dir, basename, ext]
-// posix version
-var splitPathRe = /^(.+\/(?!$)|\/)?((?:.+?)?(\.[^.]*)?)$/;
+// toggle between first and third person modes
+window.addEventListener('keydown', function (ev) {
+  if (ev.keyCode === 'R'.charCodeAt(0)) substack.toggle()
+})
 
-// path.resolve([from ...], to)
-// posix version
-exports.resolve = function() {
-var resolvedPath = '',
-    resolvedAbsolute = false;
-
-for (var i = arguments.length; i >= -1 && !resolvedAbsolute; i--) {
-  var path = (i >= 0)
-      ? arguments[i]
-      : process.cwd();
-
-  // Skip empty and invalid entries
-  if (typeof path !== 'string' || !path) {
-    continue;
-  }
-
-  resolvedPath = path + '/' + resolvedPath;
-  resolvedAbsolute = path.charAt(0) === '/';
-}
-
-// At this point the path should be resolved to a full absolute path, but
-// handle relative paths to be safe (might happen when process.cwd() fails)
-
-// Normalize the path
-resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
-    return !!p;
-  }), !resolvedAbsolute).join('/');
-
-  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
-};
-
-// path.normalize(path)
-// posix version
-exports.normalize = function(path) {
-var isAbsolute = path.charAt(0) === '/',
-    trailingSlash = path.slice(-1) === '/';
-
-// Normalize the path
-path = normalizeArray(filter(path.split('/'), function(p) {
-    return !!p;
-  }), !isAbsolute).join('/');
-
-  if (!path && !isAbsolute) {
-    path = '.';
-  }
-  if (path && trailingSlash) {
-    path += '/';
-  }
-  
-  return (isAbsolute ? '/' : '') + path;
-};
-
-
-// posix version
-exports.join = function() {
-  var paths = Array.prototype.slice.call(arguments, 0);
-  return exports.normalize(filter(paths, function(p, index) {
-    return p && typeof p === 'string';
-  }).join('/'));
-};
-
-
-exports.dirname = function(path) {
-  var dir = splitPathRe.exec(path)[1] || '';
-  var isWindows = false;
-  if (!dir) {
-    // No dirname
-    return '.';
-  } else if (dir.length === 1 ||
-      (isWindows && dir.length <= 3 && dir.charAt(1) === ':')) {
-    // It is just a slash or a drive letter with a slash
-    return dir;
+game.on('fire', function(target, state) {
+  var point = game.raycast()
+  if (!point) return
+  var erase = !state.firealt && !state.alt
+  if (erase) {
+    game.setBlock(point.position, 0)
   } else {
-    // It is a full dirname, strip trailing slash
-    return dir.substring(0, dir.length - 1);
+    game.createAdjacent(point, currentMaterial)
   }
-};
+})
 
-
-exports.basename = function(path, ext) {
-  var f = splitPathRe.exec(path)[2] || '';
-  // TODO: make this comparison case-insensitive on windows?
-  if (ext && f.substr(-1 * ext.length) === ext) {
-    f = f.substr(0, f.length - ext.length);
-  }
-  return f;
-};
-
-
-exports.extname = function(path) {
-  return splitPathRe.exec(path)[3] || '';
-};
-
-exports.relative = function(from, to) {
-  from = exports.resolve(from).substr(1);
-  to = exports.resolve(to).substr(1);
-
-  function trim(arr) {
-    var start = 0;
-    for (; start < arr.length; start++) {
-      if (arr[start] !== '') break;
-    }
-
-    var end = arr.length - 1;
-    for (; end >= 0; end--) {
-      if (arr[end] !== '') break;
-    }
-
-    if (start > end) return [];
-    return arr.slice(start, end - start + 1);
-  }
-
-  var fromParts = trim(from.split('/'));
-  var toParts = trim(to.split('/'));
-
-  var length = Math.min(fromParts.length, toParts.length);
-  var samePartsLength = length;
-  for (var i = 0; i < length; i++) {
-    if (fromParts[i] !== toParts[i]) {
-      samePartsLength = i;
-      break;
-    }
-  }
-
-  var outputParts = [];
-  for (var i = samePartsLength; i < fromParts.length; i++) {
-    outputParts.push('..');
-  }
-
-  outputParts = outputParts.concat(toParts.slice(samePartsLength));
-
-  return outputParts.join('/');
-};
-
-});
-
-require.define("__browserify_process",function(require,module,exports,__dirname,__filename,process,global){var process = module.exports = {};
-
-process.nextTick = (function () {
-    var canSetImmediate = typeof window !== 'undefined'
-        && window.setImmediate;
-    var canPost = typeof window !== 'undefined'
-        && window.postMessage && window.addEventListener
-    ;
-
-    if (canSetImmediate) {
-        return function (f) { return window.setImmediate(f) };
-    }
-
-    if (canPost) {
-        var queue = [];
-        window.addEventListener('message', function (ev) {
-            if (ev.source === window && ev.data === 'browserify-tick') {
-                ev.stopPropagation();
-                if (queue.length > 0) {
-                    var fn = queue.shift();
-                    fn();
-                }
-            }
-        }, true);
-
-        return function nextTick(fn) {
-            queue.push(fn);
-            window.postMessage('browserify-tick', '*');
-        };
-    }
-
-    return function nextTick(fn) {
-        setTimeout(fn, 0);
-    };
-})();
-
-process.title = 'browser';
-process.browser = true;
-process.env = {};
-process.argv = [];
-
-process.binding = function (name) {
-    if (name === 'evals') return (require)('vm')
-    else throw new Error('No such module. (Possibly not yet loaded)')
-};
-
-(function () {
-    var cwd = '/';
-    var path;
-    process.cwd = function () { return cwd };
-    process.chdir = function (dir) {
-        if (!path) path = require('path');
-        cwd = path.resolve(dir, cwd);
-    };
-})();
-
-});
-
-require.define("/node_modules/voxel-engine/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
-
-require.define("/node_modules/voxel-engine/index.js",function(require,module,exports,__dirname,__filename,process,global){var voxel = require('voxel')
-var voxelMesh = require('voxel-mesh')
-var voxelChunks = require('voxel-chunks')
-var THREE = require('three')
-var Stats = require('./lib/stats')
-var Detector = require('./lib/detector')
-var inherits = require('inherits')
-var path = require('path')
-var EventEmitter = require('events').EventEmitter
-if (process.browser) var interact = require('interact')
-var playerPhysics = require('player-physics')
-var requestAnimationFrame = require('raf')
-var collisions = require('collide-3d-tilemap')
-var aabb = require('aabb-3d')
-var SpatialEventEmitter = require('spatial-events')
-var regionChange = require('voxel-region-change')
-var AXISES = ['x', 'y', 'z']
-
-module.exports = Game
-
-
-function Game(opts) {
-  if (!(this instanceof Game)) return new Game(opts)
-  var self = this
-  if (!opts) opts = {}
-  if (process.browser && this.notCapable()) return
-  if (!('generateChunks' in opts)) opts.generateChunks = true
-  this.generateChunks = opts.generateChunks
-  this.setConfigurablePositions(opts)
-  this.configureChunkLoading(opts)
-  this.THREE = THREE
-  this.cubeSize = opts.cubeSize || 25
-  this.chunkSize = opts.chunkSize || 32
-  this.chunkDistance = opts.chunkDistance || 2
-  this.meshType = opts.meshType || 'surfaceMesh'
-  this.controlOptions = opts.controlOptions || {}
-  this.mesher = opts.mesher || voxel.meshers.greedy
-  this.items = []
-  this.voxels = voxel(this)
-  this.chunkGroups = voxelChunks(this)  
-  this.height = typeof window === "undefined" ? 1 : window.innerHeight
-  this.width = typeof window === "undefined" ? 1 : window.innerWidth
-  this.scene = new THREE.Scene()
-  this.camera = this.createCamera(this.scene)
-  this.controls = this.createControls()
-  if (!opts.lightsDisabled) this.addLights(this.scene)
-  this.controlLayouts = {
-    qwerty: {
-      87: 'moveForward', //w
-      65: 'moveLeft', //a
-      83: 'moveBackward', //s
-      68: 'moveRight', //d
-      32: 'wantsJump', //space
-    },
-    azerty: {
-      90: 'moveForward', //z
-      81: 'moveLeft', //q
-      83: 'moveBackward', //s
-      68: 'moveRight', //d
-      32: 'wantsJump', //space
-    },
-    dvorak: {
-      188: 'moveForward', //comma
-      65: 'moveLeft', //a
-      79: 'moveBackward', //o
-      69: 'moveRight', //e
-      32: 'wantsJump', //space
-    }
-  }
-  this.playerControls = opts.controlLayout ? this.controlLayouts[opts.controlLayout] : this.controlLayouts.qwerty
-  if (!opts.controlsDisabled) this.bindControls(this.controls)
-  if (!opts.fogDisabled) this.scene.fog = new THREE.Fog( 0xffffff, 0.00025, this.worldWidth() )
-  this.moveToPosition(this.startingPosition)
-  this.collideVoxels = collisions(
-    this.getTileAtIJK.bind(this),
-    this.cubeSize,
-    [Infinity, Infinity, Infinity],
-    [-Infinity, -Infinity, -Infinity]
-  )
-  this.spatial = new SpatialEventEmitter()
-  this.voxelRegion = regionChange(this.spatial, this.cubeSize)
-  this.chunkRegion = regionChange(this.spatial, this.cubeSize * this.chunkSize)
-  
-  // client side only
-  if (process.browser) {
-    this.materials = require('voxel-texture')({
-      THREE: THREE,
-      texturePath: opts.texturePath || './textures/',
-      materialType: opts.materialType || THREE.MeshLambertMaterial,
-      materialParams: opts.materialParams || {}
-    })
-    this.materials.load(opts.materials || [['grass', 'dirt', 'grass_dirt'], 'brick', 'dirt'])
-    this.initializeRendering()
-  }
-  
-  if (this.generateChunks) {
-    self.voxels.on('missingChunk', function(chunkPos) {
-      var chunk = self.voxels.generateChunk(chunkPos[0], chunkPos[1], chunkPos[2])
-      if (process.browser) self.showChunk(chunk)
-    })
-    this.voxels.requestMissingChunks(this.worldOrigin)
-  }
-  
-}
-
-inherits(Game, EventEmitter)
-
-Game.prototype.configureChunkLoading = function(opts) {
-  var self = this
-  if (!opts.generateChunks) return
-  if (!opts.generate) {
-    this.generate = function(x,y,z) {
-      return x*x+y*y+z*z <= 15*15 ? 1 : 0 // sphere world
-    }
-  } else {
-    this.generate = opts.generate
-  }
-  if (opts.generateVoxelChunk) {
-    this.generateVoxelChunk = opts.generateVoxelChunk
-  } else {
-    this.generateVoxelChunk = function(low, high) {
-      return voxel.generate(low, high, self.generate)
-    }
-  }
-}
-
-Game.prototype.worldWidth = function() {
-  return this.chunkSize * 2 * this.chunkDistance * this.cubeSize
-}
-
-Game.prototype.getTileAtIJK = function(i, j, k) {
-  var pos = this.tilespaceToWorldspace(i, j, k)
-  // TODO: @chrisdickinson: cache the chunk lookup by `i|j|k`
-  // since we'll be seeing the same chunk so often
-  var chunk = this.getChunkAtPosition(pos)
-
-  if(!chunk) {
-    return
-  }
-
-  var chunkPosition = this.chunkspaceToTilespace(chunk.position)
-  var chunkID = this.voxels.chunkAtPosition(pos).join('|') 
-  var chunk = this.voxels.chunks[chunkID]
-   
-  i -= chunkPosition.i
-  j -= chunkPosition.j
-  k -= chunkPosition.k
-
-  var tileOffset = 
-    i +
-    j * this.chunkSize +
-    k * this.chunkSize * this.chunkSize
-
-  return chunk.voxels[tileOffset] 
-}
-
-Game.prototype.tilespaceToWorldspace = function(i, j, k) {
-  return {
-    x: i * this.cubeSize,
-    y: j * this.cubeSize,
-    z: k * this.cubeSize
-  }
-}
-
-Game.prototype.chunkspaceToTilespace = function(pos) {
-  return {
-    i: pos[0] * this.chunkSize,
-    j: pos[1] * this.chunkSize,
-    k: pos[2] * this.chunkSize
-  }
-}
-
-Game.prototype.getChunkAtPosition = function(pos) {
-  var chunkID = this.voxels.chunkAtPosition(pos).join('|') 
-
-  var chunk = this.voxels.chunks[chunkID]
-  return chunk
-}
-
-Game.prototype.initializeRendering = function() {
-  var self = this
-  this.renderer = this.createRenderer()
-  if (!this.statsDisabled) this.addStats()
-  window.addEventListener('resize', this.onWindowResize.bind(this), false)
-  window.addEventListener('mousedown', this.onMouseDown.bind(this), false)
-  window.addEventListener('mouseup', this.onMouseUp.bind(this), false)
-  requestAnimationFrame(window).on('data', this.tick.bind(this))
-  this.chunkRegion.on('change', function(newChunk) {
-    self.removeFarChunks()
-  })
-}
-
-Game.prototype.removeFarChunks = function(playerPosition) {
-  var self = this
-  playerPosition = playerPosition || this.controls.yawObject.position
-  var nearbyChunks = this.voxels.nearbyChunks(playerPosition).map(function(chunkPos) {
-    return chunkPos.join('|')
-  })
-  Object.keys(self.voxels.chunks).map(function(chunkIndex) {
-    if (nearbyChunks.indexOf(chunkIndex) > -1) return
-    self.scene.remove(self.voxels.meshes[chunkIndex][self.meshType])
-    delete self.voxels.chunks[chunkIndex]
-  })
-  self.voxels.requestMissingChunks(playerPosition)
-}
-
-Game.prototype.parseVectorOption = function(vector) {
-  if (!vector) return
-  if (vector.length && typeof vector.length === 'number') return new THREE.Vector3(vector[0], vector[1], vector[2])
-  if (typeof vector === 'object') return new THREE.Vector3(vector.x, vector.y, vector.z)
-}
-
-Game.prototype.setConfigurablePositions = function(opts) {
-  var sp = opts.startingPosition
-  if (sp) sp = this.parseVectorOption(sp)
-  this.startingPosition = sp || new THREE.Vector3(35,1024,35)
-  var wo = opts.worldOrigin
-  if (wo) wo = this.parseVectorOption(wo)
-  this.worldOrigin = wo || new THREE.Vector3(0,0,0)
-}
-
-Game.prototype.notCapable = function() {
-  if( !Detector().webgl ) {
-    var wrapper = document.createElement('div')
-    wrapper.className = "errorMessage"
-    var a = document.createElement('a')
-    a.title = "You need WebGL and Pointer Lock (Chrome 23/Firefox 14) to play this game. Click here for more information."
-    a.innerHTML = a.title
-    a.href = "http://get.webgl.org"
-    wrapper.appendChild(a)
-    this.element = wrapper
-    return true
-  }
-  return false
-}
-
-Game.prototype.setupPointerLock = function(element) {
-  var self = this
-  element = element || document.body
-  if (typeof element !== 'object') element = document.querySelector(element)
-  var pointer = this.pointer = interact(element)
-  if (!pointer.pointerAvailable()) this.pointerLockDisabled = true
-  pointer.on('attain', function(movements) {
-    self.controls.enabled = true
-    movements.pipe(self.controls)
-  })
-  pointer.on('release', function() {
-    self.controls.enabled = false
-  })
-  pointer.on('error', function() {
-    // user denied pointer lock OR it's not available
-    self.pointerLockDisabled = true
-    console.error('pointerlock error')
-  })
-}
-
-Game.prototype.requestPointerLock = function(element) {
-  if (!this.pointer) this.setupPointerLock(element)
-  this.pointer.request()
-}
-
-Game.prototype.moveToPosition = function(position) {
-  var pos = this.controls.yawObject.position
-  pos.x = position.x
-  pos.y = position.y
-  pos.z = position.z
-}
-
-Game.prototype.onWindowResize = function() {
-  this.camera.aspect = window.innerWidth / window.innerHeight
-  this.camera.updateProjectionMatrix()
-  this.renderer.setSize( window.innerWidth, window.innerHeight )
-}
-
-Game.prototype.addMarker = function(position) {
-  var geometry = new THREE.SphereGeometry( 1, 4, 4 );
-  var material = new THREE.MeshPhongMaterial( { color: 0xffffff, shading: THREE.FlatShading } );
-  var mesh = new THREE.Mesh( geometry, material );
-  mesh.position.copy(position)
-  this.scene.add(mesh)
-}
-
-Game.prototype.addAABBMarker = function(aabb, color) {
-  var geometry = new THREE.CubeGeometry(aabb.width(), aabb.height(), aabb.depth())
-  var material = new THREE.MeshBasicMaterial({ color: color || 0xffffff, wireframe: true, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
-  var mesh = new THREE.Mesh(geometry, material)
-  mesh.position.set(aabb.x0() + aabb.width() / 2, aabb.y0() + aabb.height() / 2, aabb.z0() + aabb.depth() / 2)
-  this.scene.add(mesh)
-}
-
-Game.prototype.addItem = function(item) {
-  var self = this
-  self.items.push(item)
-  item.velocity = item.velocity || { x: 0, y: 0, z: 0 }
-  item.collisionRadius = item.collisionRadius || item.size
-  if (!item.width) item.width = item.size
-  if (!item.height) item.height = item.size
-  if (!item.depth) item.depth = item.width
-
-  var ticker = item.tick
-  item.tick = function (dt) {
-    if (item.collisionRadius) {
-      var p0 = self.controls.yawObject.position.clone()
-      var p1 = self.controls.yawObject.position.clone()
-      p1.y -= 25
-      var d0 = distance(item.mesh.position, p0)
-      var d1 = distance(item.mesh.position, p1)
-      if (Math.min(d0, d1) <= item.collisionRadius) {
-        self.emit('collision', item)
-      }
-    }
-
-    if (!item.resting) {
-      var c = self.getCollisions(item.mesh.position, item)
-      if (c.bottom.length > 0) {
-        if (item.velocity.y <= 0) {
-          item.mesh.position.y -= item.velocity.y
-          item.velocity.y = 0
-          item.resting = true
-        }
-        item.velocity.x = 0
-        item.velocity.z = 0
-      } else if (c.middle.length || c.top.length) {
-        item.velocity.x *= -1
-        item.velocity.z *= -1
-      }
-
-      item.velocity.y -= 0.003
-      item.mesh.position.x += item.velocity.x * dt
-      item.mesh.position.y += item.velocity.y * dt
-      item.mesh.position.z += item.velocity.z * dt
-    }
-
-    if (ticker) ticker(item)
-  }
-  self.scene.add(item.mesh)
-}
-
-Game.prototype.removeItem = function(item) {
-  var ix = this.items.indexOf(item)
-  if (ix < 0) return
-  this.items.splice(ix, 1)
-  this.scene.remove(item.mesh)
-}
-
-Game.prototype.onMouseDown = function(e) {
-  if (!this.controls.enabled) return
-  var intersection = this.raycast()
-  if (intersection) this.emit('mousedown', intersection, e)
-}
-
-Game.prototype.onMouseUp = function(e) {
-  if (!this.controls.enabled) return
-  var intersection = this.raycast()
-  if (intersection) this.emit('mouseup', intersection, e)
-}
-
-Game.prototype.intersectAllMeshes = function(start, direction, maxDistance) {
-  var self = this
-  var meshes = Object.keys(self.voxels.meshes).map(function(key) {
-    return self.voxels.meshes[key][self.meshType]
-  }).concat(self.chunkGroups.meshes)
-  
-  var d = direction.subSelf(start).normalize()
-  var ray = new THREE.Raycaster(start, d, 0, maxDistance)
-  var intersections = ray.intersectObjects(meshes)
-  if (intersections.length === 0) return false
-  
-  var dists = intersections.map(function (i) { return i.distance })
-  var inter = intersections[dists.indexOf(Math.min.apply(null, dists))]
-  
-  var p = new THREE.Vector3()
-  p.copy(inter.point)
-  p.intersection = inter
-  p.direction = d
-  
-  var cm = self.chunkGroups.chunkMatricies[inter.object.id]
-  if (cm) p.chunkMatrix = cm
-  
-  p.x += d.x
-  p.y += d.y
-  p.z += d.z
-  return p
-}
-
-Game.prototype.raycast = function(maxDistance) {
-  var start = this.controls.yawObject.position.clone()
-  var direction = this.camera.matrixWorld.multiplyVector3(new THREE.Vector3(0,0,-1))
-  var intersects = this.intersectAllMeshes(start, direction, maxDistance)
-  return intersects
-}
-
-Game.prototype.createCamera = function() {
-  var camera;
-  camera = new THREE.PerspectiveCamera(60, this.width / this.height, 1, 10000)
-  camera.lookAt(new THREE.Vector3(0, 0, 0))
-  this.scene.add(camera)
-  return camera
-}
-
-Game.prototype.createControls = function(camera) {
-  var controls = playerPhysics(this.camera, this.controlOptions)
-  this.scene.add( controls.yawObject )
-  return controls
-}
-
-Game.prototype.createRenderer = function() {
-  this.renderer = new THREE.WebGLRenderer({
-    antialias: true
-  })
-  this.renderer.setSize(this.width, this.height)
-  this.renderer.setClearColorHex(0xBFD1E5, 1.0)
-  this.renderer.clear()
-  this.element = this.renderer.domElement
-  return this.renderer
-}
-
-Game.prototype.appendTo = function (element) {
-  if (typeof element === 'object') {
-    element.appendChild(this.element)
-  }
-  else {
-    document.querySelector(element).appendChild(this.element)
-  }
-}
-
-Game.prototype.addStats = function() {
-  stats = new Stats()
-  stats.domElement.style.position  = 'absolute'
-  stats.domElement.style.bottom  = '0px'
-  document.body.appendChild( stats.domElement )
-}
-
-Game.prototype.cameraRotation = function() {
-  var xAngle = this.controls.pitchObject.rotation.x
-  var yAngle = this.controls.yawObject.rotation.y
-  return {x: xAngle, y: yAngle}
-}
-
-Game.prototype.getCollisions = function(position, dims, checker, controls) {
-  var self = this
-  var p = position.clone()
-  var w = dims.width / 2
-  var h = dims.height / 2
-  var d = dims.depth / 2
-
-  controls = controls || this.controls
-  var rx = controls.pitchObject.rotation.x
-  var ry = controls.yawObject.rotation.y
-
-  var vertices = {
-    bottom: [
-      new THREE.Vector3(p.x - w, p.y - h, p.z - d),
-      new THREE.Vector3(p.x - w, p.y - h, p.z + d),
-      new THREE.Vector3(p.x + w, p.y - h, p.z - d),
-      new THREE.Vector3(p.x + w, p.y - h, p.z + d)
-    ],
-    middle: [
-      new THREE.Vector3(p.x - w, p.y, p.z - d),
-      new THREE.Vector3(p.x - w, p.y, p.z + d),
-      new THREE.Vector3(p.x + w, p.y, p.z - d),
-      new THREE.Vector3(p.x + w, p.y, p.z + d)
-    ],
-    top: [
-      new THREE.Vector3(p.x - w, p.y + h, p.z - d),
-      new THREE.Vector3(p.x - w, p.y + h, p.z + d),
-      new THREE.Vector3(p.x + w, p.y + h, p.z - d),
-      new THREE.Vector3(p.x + w, p.y + h, p.z + d)
-    ],
-    // -------------------------------
-    up: [ new THREE.Vector3(p.x, p.y + h, p.z) ],
-    down: [ new THREE.Vector3(p.x, p.y - h, p.z) ],
-    left: [
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry + Math.PI / 2),
-        p.y,
-        p.z + d * Math.sin(ry + Math.PI / 2)
-      ) ,
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry + Math.PI / 2),
-        p.y + h * 1.5,
-        p.z + d * Math.sin(ry + Math.PI / 2)
-      )
-    ],
-    right: [
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry - Math.PI / 2),
-        p.y,
-        p.z + d * Math.sin(ry - Math.PI / 2)
-      ),
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry - Math.PI / 2),
-        p.y + h * 1.5,
-        p.z + d * Math.sin(ry - Math.PI / 2)
-      )
-    ],
-    back: [
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry),
-        p.y,
-        p.z + d * Math.sin(ry)
-      ),
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry),
-        p.y + h * 1.5,
-        p.z + d * Math.sin(ry)
-      )
-    ],
-    forward: [
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry + Math.PI),
-        p.y,
-        p.z + d * Math.sin(ry + Math.PI)
-      ),
-      new THREE.Vector3(
-        p.x + w * Math.cos(ry + Math.PI),
-        p.y + h * 1.5,
-        p.z + d * Math.sin(ry + Math.PI)
-      )
-    ]
-  }
-
-  return {
-    bottom: vertices.bottom.map(check).filter(Boolean),
-    middle: vertices.middle.map(check).filter(Boolean),
-    top: vertices.top.map(check).filter(Boolean),
-    // ----
-    up: vertices.up.map(check).filter(Boolean),
-    down: vertices.down.map(check).filter(Boolean),
-    left: vertices.left.map(check).filter(Boolean),
-    right: vertices.right.map(check).filter(Boolean),
-    forward: vertices.forward.map(check).filter(Boolean),
-    back: vertices.back.map(check).filter(Boolean)
-  }
-
-  function check(vertex) {
-    if (checker) return checker(vertex) && vertex
-    var val = self.voxels.voxelAtPosition(vertex)
-    return val && vertex
-  }
-}
-
-Game.prototype.addLights = function(scene) {
-  var ambientLight, directionalLight
-  ambientLight = new THREE.AmbientLight(0xcccccc)
-  scene.add(ambientLight)
-  var light	= new THREE.DirectionalLight( 0xffffff , 1)
-  light.position.set( 1, 1, 0.5 ).normalize()
-  scene.add( light )
-};
-
-Game.prototype.currentMesh = function() {
-  var cid = this.voxels.chunkAtPosition(this.controls.yawObject.position).join('|')
-  return this.voxels.meshes[cid]
-}
-
-Game.prototype.checkBlock = function(pos) {
-  var self = this
-  var direction = self.camera.matrixWorld.multiplyVector3(new THREE.Vector3(0,0,-1))
-  var start = self.controls.yawObject.position.clone()
-  var d = direction.subSelf(start).normalize()
-
-  var p = new THREE.Vector3()
-  p.copy(pos)
-  p.x -= 1.1 * d.x
-  p.y -= 1.1 * d.y
-  p.z -= 1.1 * d.z
-  var block = self.getBlock(p)
-  if (block) return false
-
-  var voxelVector = self.voxels.voxelVector(p)
-  var vidx = self.voxels.voxelIndex(voxelVector)
-  var c = self.voxels.chunkAtPosition(p)
-  var ckey = c.join('|')
-  var chunk = self.voxels.chunks[ckey]
-  if (!chunk) return false
-
-  var aabb = this.playerAABB()
-  var bottom = {x: aabb.x0(), y: aabb.y0(), z: aabb.z0()}
-  var playerVector = self.voxels.voxelVector(bottom)
-
-  if ( playerVector.x === voxelVector.x
-    && playerVector.y === voxelVector.y
-    && playerVector.z === voxelVector.z) return false
-  
-  return {chunkIndex: ckey, voxelVector: voxelVector}
-}
-
-Game.prototype.createBlock = function(pos, val) {
-  if (pos.chunkMatrix) {
-    return this.chunkGroups.createBlock(pos, val)
-  }
-  
-  var newBlock = this.checkBlock(pos)
-  if (!newBlock) return
-  var chunk = this.voxels.chunks[newBlock.chunkIndex]
-  var old = chunk.voxels[this.voxels.voxelIndex(newBlock.voxelVector)]
-  chunk.voxels[this.voxels.voxelIndex(newBlock.voxelVector)] = val
-  this.showChunk(chunk)
-  this.spatial.emit('change-block', [pos.x, pos.y, pos.z], pos, old, val)
-  return true
-}
-
-Game.prototype.setBlock = function(pos, val) {
-  if (pos.chunkMatrix) {
-    return this.chunkGroups.setBlock(pos, val)
-  }
-  
-  var hitVoxel = this.voxels.voxelAtPosition(pos, val)
-  var c = this.voxels.chunkAtPosition(pos)
-  this.showChunk(this.voxels.chunks[c.join('|')])
-
-  this.spatial.emit('change-block', [pos.x, pos.y, pos.z], pos, hitVoxel, val)
-}
-
-Game.prototype.getBlock = function(pos) {
-  if (pos.chunkMatrix) {
-    return this.chunkGroups.getBlock(pos)
-  }
-  return this.voxels.voxelAtPosition(pos)
-}
-
-Game.prototype.showChunk = function(chunk, mesher) {
-  var chunkIndex = chunk.position.join('|')
-  var bounds = this.voxels.getBounds.apply(this.voxels, chunk.position)
-  var cubeSize = this.cubeSize
-  var scale = new THREE.Vector3(cubeSize, cubeSize, cubeSize)
-  var mesh = voxelMesh(chunk, this.mesher, scale)
-  this.voxels.chunks[chunkIndex] = chunk
-  if (this.voxels.meshes[chunkIndex]) this.scene.remove(this.voxels.meshes[chunkIndex][this.meshType])
-  this.voxels.meshes[chunkIndex] = mesh
-  if (this.meshType === 'wireMesh') mesh.createWireMesh()
-  else mesh.createSurfaceMesh(new THREE.MeshFaceMaterial(this.materials.get()))
-  mesh.setPosition(bounds[0][0] * cubeSize, bounds[0][1] * cubeSize, bounds[0][2] * cubeSize)
-  mesh.addToScene(this.scene)
-  this.materials.paint(mesh.geometry)
-  this.items.forEach(function (item) { item.resting = false })
-  return mesh
-}
-
-Game.prototype.playerAABB = function(position) {
-  var pos = position || this.controls.yawObject.position
-  var size = this.cubeSize
-
-  var bbox = aabb([
-    pos.x - size / 4,
-    pos.y - size * 1.5,
-    pos.z - size / 4
-  ], [
-    size / 2,
-    size * 1.5,
-    size / 2
-  ])
-  return bbox
-}
-
-Game.prototype.updatePlayerPhysics = function(bbox, controls) {
-  var self = this
-  var pos = controls.yawObject.position
-  var yaw = controls.yawObject
-  var size = self.cubeSize
-
-  var base = [ pos.x, pos.y, pos.z ]
-  
-  var velocity = [
-    controls.velocity.x,
-    controls.velocity.y,
-    controls.velocity.z
-  ]
-  
-  var worldVector
-
-  yaw.translateX(velocity[0])
-  yaw.translateY(velocity[1])
-  yaw.translateZ(velocity[2])
-
-  worldVector = [
-    pos.x - base[0],
-    pos.y - base[1],
-    pos.z - base[2]
-  ]
-
-  yaw.translateX(-velocity[0])
-  yaw.translateY(-velocity[1])
-  yaw.translateZ(-velocity[2])
-
-  controls.freedom['y-'] = true
-
-  self.collideVoxels(bbox, worldVector, function(axis, tile, coords, dir, edgeVector) {
-    if (tile) {
-      worldVector[axis] = edgeVector
-      if (axis === 1 && dir === -1) {
-        controls.freedom['y-'] = false
-      }
-      self.spatial.emit(
-        'collide-'+AXISES[axis],
-        [worldVector[0] + base[0], worldVector[1] + base[1], worldVector[2] + base[2]],
-        tile, coords, dir
-      )
-      return true
-    }
-  })  
-  
-  var newLocation = new THREE.Vector3(
-    worldVector[0] + base[0], worldVector[1] + base[1], worldVector[2] + base[2]
-  )
-
-  pos.copy(newLocation)
-
-  self.spatial.emit('position', bbox, newLocation)
-
-}
-
-Game.prototype.bindControls = function (controls) {
-  var self = this
-  var onKeyDown = function ( event ) {
-    var command = self.playerControls[event.keyCode];
-    if (command) { controls.emit('command', command, true); }
-  }
-
-  var onKeyUp = function ( event ) {
-    var command = self.playerControls[event.keyCode];
-    if (command) { controls.emit('command', command, false); }
-  }
-
-  document.addEventListener( 'keydown', onKeyDown, false )
-  document.addEventListener( 'keyup', onKeyUp, false )
-}
-
-Game.prototype.tick = function(delta) {
-  var self = this
-  this.controls.tick(delta, function(controls) {
-    var bbox = self.playerAABB()
-    self.updatePlayerPhysics(bbox, controls)
-  })
-  this.items.forEach(function (item) { item.tick(delta) })
-  this.emit('tick', delta)
-  this.render(delta)
-  stats.update()
-}
-
-Game.prototype.render = function(delta) {
-  this.renderer.render(this.scene, this.camera)
-}
-
-function distance (a, b) {
-  var x = a.x - b.x
-  var y = a.y - b.y
-  var z = a.z - b.z
-  return Math.sqrt(x*x + y*y + z*z)
-}
-
-});
-
-require.define("/node_modules/voxel/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel/index.js",function(require,module,exports,__dirname,__filename,process,global){var chunker = require('./chunker')
+},{"../":2,"voxel":3,"voxel-player":4,"voxel-pp":5,"voxel-engine":6,"toolbar":7}],3:[function(require,module,exports){var chunker = require('./chunker')
 
 module.exports = function(opts) {
   if (!opts.generateVoxelChunk) opts.generateVoxelChunk = function(low, high) {
@@ -1214,14 +118,14 @@ module.exports.generator = {}
 module.exports.generate = generate
 
 // from https://github.com/mikolalysenko/mikolalysenko.github.com/blob/master/MinecraftMeshes2/js/testdata.js#L4
-function generate(l, h, f) {
+function generate(l, h, f, game) {
   var d = [ h[0]-l[0], h[1]-l[1], h[2]-l[2] ]
   var v = new Int8Array(d[0]*d[1]*d[2])
   var n = 0
   for(var k=l[2]; k<h[2]; ++k)
   for(var j=l[1]; j<h[1]; ++j)
   for(var i=l[0]; i<h[0]; ++i, ++n) {
-    v[n] = f(i,j,k,n)
+    v[n] = f(i,j,k,n,game)
   }
   return {voxels:v, dims:d}
 }
@@ -1287,334 +191,123 @@ module.exports.generateExamples = function() {
 }
 
 
-});
+},{"./chunker":8,"./meshers/culled":9,"./meshers/greedy":10,"./meshers/monotone":11,"./meshers/stupid":12}],2:[function(require,module,exports){var lut = require('lut')
+  , SampleShader = require('./shader')
 
-require.define("/node_modules/voxel/chunker.js",function(require,module,exports,__dirname,__filename,process,global){var events = require('events')
-var inherits = require('inherits')
+function Colorist(processor, options) {
+  if (!(this instanceof Colorist)) return new Colorist(processor, options)
+  var THREE = this.THREE = processor.THREE
+    , self = this
+    , canvas
 
-module.exports = function(opts) {
-  return new Chunker(opts)
-}
+  this.shader = SampleShader(processor, THREE)
 
-module.exports.Chunker = Chunker
+  options = options || {}
+  options.table = options.table || lut(33, 33, 33)
 
-function Chunker(opts) {
-  this.distance = opts.chunkDistance || 2
-  this.chunkSize = opts.chunkSize || 32
-  this.cubeSize = opts.cubeSize || 25
-  this.generateVoxelChunk = opts.generateVoxelChunk
-  this.chunks = {}
-  this.meshes = {}
-}
+  this.pass = new processor.ShaderPass(this.shader)
+  processor.addPass(this.pass)
 
-inherits(Chunker, events.EventEmitter)
-
-Chunker.prototype.nearbyChunks = function(position) {
-  var current = this.chunkAtPosition(position)
-  var x = current[0]
-  var y = current[1]
-  var z = current[2]
-  var dist = this.distance
-  var nearby = []
-  for (var cx = (x - dist); cx !== (x + dist); ++cx) {
-    for (var cy = (y - dist); cy !== (y + dist); ++cy) {
-      for (var cz = (z - dist); cz !== (z + dist); ++cz) {
-        nearby.push([cx, cy, cz])
-      }
-    }
-  }
-  return nearby
-}
-
-Chunker.prototype.requestMissingChunks = function(position) {
-  var self = this
-  this.nearbyChunks(position).map(function(chunk) {
-    if (!self.chunks[chunk.join('|')]) {
-      self.emit('missingChunk', chunk)
-    }
-  })
-}
-
-Chunker.prototype.getBounds = function(x, y, z) {
-  var size = this.chunkSize
-  var low = [x * size, y * size, z * size]
-  var high = [low[0] + size, low[1] + size, low[2] + size]
-  return [low, high]
-}
-
-Chunker.prototype.generateChunk = function(x, y, z) {
-  var self = this
-  var bounds = this.getBounds(x, y, z)
-  var chunk = this.generateVoxelChunk(bounds[0], bounds[1], x, y, z)
-  var position = [x, y, z]
-  chunk.position = position
-  this.chunks[position.join('|')] = chunk
-  return chunk
-}
-
-Chunker.prototype.chunkAtPosition = function(position) {
-  var chunkSize = this.chunkSize
-  var cubeSize = this.cubeSize
-  var cx = position.x / cubeSize / chunkSize
-  var cy = position.y / cubeSize / chunkSize
-  var cz = position.z / cubeSize / chunkSize
-  var chunkPos = [Math.floor(cx), Math.floor(cy), Math.floor(cz)]
-  return chunkPos
+  this.table(options.table)
 };
 
-Chunker.prototype.voxelIndex = function(voxelVector) {
-  var size = this.chunkSize
-  var vidx = voxelVector.x + voxelVector.y*size + voxelVector.z*size*size
-  return vidx
-}
+Colorist.prototype.snapshot = function(original) {
+  var renderer = game.renderer || game.view.renderer
+    , parent = renderer.domElement
+    , canvas = document.createElement('canvas')
+    , ctx = canvas.getContext('2d')
+    , image = new Image
 
-Chunker.prototype.voxelIndexFromPosition = function(pos) {
-  var v = this.voxelVector(pos)
-  return this.voxelIndex(v)
-}
-
-Chunker.prototype.voxelAtPosition = function(pos, val) {
-  var ckey = this.chunkAtPosition(pos).join('|')
-  var chunk = this.chunks[ckey]
-  if (!chunk) return false
-  var vector = this.voxelVector(pos)
-  var vidx = this.voxelIndex(vector)
-  if (!vidx && vidx !== 0) return false
-  if (typeof val !== 'undefined') {
-    chunk.voxels[vidx] = val
-  }
-  var v = chunk.voxels[vidx]
-  return v
-}
-
-Chunker.prototype.voxelVector = function(pos) {
-  var size = this.chunkSize
-  var cubeSize = this.cubeSize
-  var vx = (size + Math.floor(pos.x / cubeSize) % size) % size
-  var vy = (size + Math.floor(pos.y / cubeSize) % size) % size
-  var vz = (size + Math.floor(pos.z / cubeSize) % size) % size
-  return {x: Math.abs(vx), y: Math.abs(vy), z: Math.abs(vz)}
-};
-
-});
-
-require.define("events",function(require,module,exports,__dirname,__filename,process,global){if (!process.EventEmitter) process.EventEmitter = function () {};
-
-var EventEmitter = exports.EventEmitter = process.EventEmitter;
-var isArray = typeof Array.isArray === 'function'
-    ? Array.isArray
-    : function (xs) {
-        return Object.prototype.toString.call(xs) === '[object Array]'
-    }
-;
-function indexOf (xs, x) {
-    if (xs.indexOf) return xs.indexOf(x);
-    for (var i = 0; i < xs.length; i++) {
-        if (x === xs[i]) return i;
-    }
-    return -1;
-}
-
-// By default EventEmitters will print a warning if more than
-// 10 listeners are added to it. This is a useful default which
-// helps finding memory leaks.
-//
-// Obviously not all Emitters should be limited to 10. This function allows
-// that to be increased. Set to zero for unlimited.
-var defaultMaxListeners = 10;
-EventEmitter.prototype.setMaxListeners = function(n) {
-  if (!this._events) this._events = {};
-  this._events.maxListeners = n;
-};
-
-
-EventEmitter.prototype.emit = function(type) {
-  // If there is no 'error' event listener then throw.
-  if (type === 'error') {
-    if (!this._events || !this._events.error ||
-        (isArray(this._events.error) && !this._events.error.length))
-    {
-      if (arguments[1] instanceof Error) {
-        throw arguments[1]; // Unhandled 'error' event
-      } else {
-        throw new Error("Uncaught, unspecified 'error' event.");
-      }
-      return false;
-    }
-  }
-
-  if (!this._events) return false;
-  var handler = this._events[type];
-  if (!handler) return false;
-
-  if (typeof handler == 'function') {
-    switch (arguments.length) {
-      // fast cases
-      case 1:
-        handler.call(this);
-        break;
-      case 2:
-        handler.call(this, arguments[1]);
-        break;
-      case 3:
-        handler.call(this, arguments[1], arguments[2]);
-        break;
-      // slower
-      default:
-        var args = Array.prototype.slice.call(arguments, 1);
-        handler.apply(this, args);
-    }
-    return true;
-
-  } else if (isArray(handler)) {
-    var args = Array.prototype.slice.call(arguments, 1);
-
-    var listeners = handler.slice();
-    for (var i = 0, l = listeners.length; i < l; i++) {
-      listeners[i].apply(this, args);
-    }
-    return true;
-
+  if (original) {
+    renderer.render(game.scene, game.camera)
   } else {
-    return false;
+    game.render()
   }
+
+  canvas.width = parent.width
+  canvas.height = parent.height
+  canvas.getContext('2d').drawImage(parent, 0, 0)
+
+  if (original) {
+    lut(33, 33, 33, canvas)
+  } else {
+    canvas.getContext('2d').drawImage(this.tableTexture.image, 0, 0)
+  }
+
+  image.src = canvas.toDataURL()
+
+  return image
 };
 
-// EventEmitter is defined in src/node_events.cc
-// EventEmitter.prototype.emit() is also defined there.
-EventEmitter.prototype.addListener = function(type, listener) {
-  if ('function' !== typeof listener) {
-    throw new Error('addListener only takes instances of Function');
-  }
+Colorist.prototype.table = function(table) {
+  var self = this
+    , canvas
 
-  if (!this._events) this._events = {};
+  function ready() {
+    var pass = self.pass;
 
-  // To avoid recursion in the case that type == "newListeners"! Before
-  // adding it to the listeners, first emit "newListeners".
-  this.emit('newListener', type, listener);
-
-  if (!this._events[type]) {
-    // Optimize the case of one listener. Don't need the extra array object.
-    this._events[type] = listener;
-  } else if (isArray(this._events[type])) {
-
-    // Check for listener leak
-    if (!this._events[type].warned) {
-      var m;
-      if (this._events.maxListeners !== undefined) {
-        m = this._events.maxListeners;
-      } else {
-        m = defaultMaxListeners;
-      }
-
-      if (m && m > 0 && this._events[type].length > m) {
-        this._events[type].warned = true;
-        console.error('(node) warning: possible EventEmitter memory ' +
-                      'leak detected. %d listeners added. ' +
-                      'Use emitter.setMaxListeners() to increase limit.',
-                      this._events[type].length);
-        console.trace();
-      }
+    if (self.tableTexture) {
+      self.tableTexture.image = canvas;
+    } else {
+      self.tableTexture = new self.THREE.Texture(canvas);
     }
 
-    // If we've already got an array, just append.
-    this._events[type].push(listener);
+    self.tableTexture.magFilter = self.THREE.NearestFilter;
+    self.tableTexture.minFilter = self.THREE.LinearMipMapLinearFilter;
+    self.tableTexture.wrapT     = self.THREE.RepeatWrapping;
+    self.tableTexture.wrapS     = self.THREE.RepeatWrapping;
+    self.tableTexture.needsUpdate = true;
+
+    pass.uniforms.tColorist.value = self.tableTexture;
+  };
+
+  if (typeof table === 'string' || table.nodeName === 'img') {
+    canvas = imageToCanvas(table, ready);
   } else {
-    // Adding the second element, need to change to array.
-    this._events[type] = [this._events[type], listener];
+    canvas = clipCanvas(table);
+    ready();
+  }
+};
+
+function imageToCanvas(src, callback) {
+  if (src.nodeName === 'canvas') return src
+  callback = callback || function(){}
+
+  var canvas = document.createElement('canvas')
+    , ctx = canvas.getContext('2d')
+    , image
+
+  if (typeof src !== 'string') {
+    src = src.src
   }
 
-  return this;
+  image = new Image
+  image.onload = function() {
+    canvas.width = 33 * 33
+    canvas.height = 33
+    ctx.drawImage(image, 0, 0)
+    callback()
+  };
+  image.src = src
+
+  return canvas
 };
 
-EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+function clipCanvas(original) {
+  var updated = document.createElement('canvas')
+    , ctx = original.getContext('2d')
+    , imageData = ctx.getImageData(0, 0, 33 * 33, 33)
 
-EventEmitter.prototype.once = function(type, listener) {
-  var self = this;
-  self.on(type, function g() {
-    self.removeListener(type, g);
-    listener.apply(this, arguments);
-  });
+  updated.width = 33 * 33
+  updated.height = 33
+  updated.getContext('2d').putImageData(imageData, 0, 0)
 
-  return this;
-};
-
-EventEmitter.prototype.removeListener = function(type, listener) {
-  if ('function' !== typeof listener) {
-    throw new Error('removeListener only takes instances of Function');
-  }
-
-  // does not use listeners(), so no side effect of creating _events[type]
-  if (!this._events || !this._events[type]) return this;
-
-  var list = this._events[type];
-
-  if (isArray(list)) {
-    var i = indexOf(list, listener);
-    if (i < 0) return this;
-    list.splice(i, 1);
-    if (list.length == 0)
-      delete this._events[type];
-  } else if (this._events[type] === listener) {
-    delete this._events[type];
-  }
-
-  return this;
-};
-
-EventEmitter.prototype.removeAllListeners = function(type) {
-  // does not use listeners(), so no side effect of creating _events[type]
-  if (type && this._events && this._events[type]) this._events[type] = null;
-  return this;
-};
-
-EventEmitter.prototype.listeners = function(type) {
-  if (!this._events) this._events = {};
-  if (!this._events[type]) this._events[type] = [];
-  if (!isArray(this._events[type])) {
-    this._events[type] = [this._events[type]];
-  }
-  return this._events[type];
-};
-
-});
-
-require.define("/node_modules/voxel/node_modules/inherits/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./inherits.js"}
-});
-
-require.define("/node_modules/voxel/node_modules/inherits/inherits.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = inherits
-
-function inherits (c, p, proto) {
-  proto = proto || {}
-  var e = {}
-  ;[c.prototype, proto].forEach(function (s) {
-    Object.getOwnPropertyNames(s).forEach(function (k) {
-      e[k] = Object.getOwnPropertyDescriptor(s, k)
-    })
-  })
-  c.prototype = Object.create(p.prototype, e)
-  c.super = p
+  return updated
 }
 
-//function Child () {
-//  Child.super.call(this)
-//  console.error([this
-//                ,this.constructor
-//                ,this.constructor === Child
-//                ,this.constructor.super === Parent
-//                ,Object.getPrototypeOf(this) === Child.prototype
-//                ,Object.getPrototypeOf(Object.getPrototypeOf(this))
-//                 === Parent.prototype
-//                ,this instanceof Child
-//                ,this instanceof Parent])
-//}
-//function Parent () {}
-//inherits(Child, Parent)
-//new Child
+module.exports = Colorist
 
-});
-
-require.define("/node_modules/voxel/meshers/culled.js",function(require,module,exports,__dirname,__filename,process,global){//Naive meshing (with face culling)
+},{"./shader":13,"lut":14}],9:[function(require,module,exports){//Naive meshing (with face culling)
 function CulledMesh(volume, dims) {
   //Precalculate direction vectors for convenience
   var dir = new Array(3);
@@ -1665,9 +358,7 @@ if(exports) {
   exports.mesher = CulledMesh;
 }
 
-});
-
-require.define("/node_modules/voxel/meshers/greedy.js",function(require,module,exports,__dirname,__filename,process,global){var GreedyMesh = (function() {
+},{}],10:[function(require,module,exports){var GreedyMesh = (function() {
 //Cache buffer internally
 var mask = new Int32Array(4096);
 
@@ -1783,9 +474,7 @@ if(exports) {
   exports.mesher = GreedyMesh;
 }
 
-});
-
-require.define("/node_modules/voxel/meshers/monotone.js",function(require,module,exports,__dirname,__filename,process,global){"use strict";
+},{}],11:[function(require,module,exports){"use strict";
 
 var MonotoneMesh = (function(){
 
@@ -2037,9 +726,7 @@ if(exports) {
   exports.mesher = MonotoneMesh;
 }
 
-});
-
-require.define("/node_modules/voxel/meshers/stupid.js",function(require,module,exports,__dirname,__filename,process,global){//The stupidest possible way to generate a Minecraft mesh (I think)
+},{}],12:[function(require,module,exports){//The stupidest possible way to generate a Minecraft mesh (I think)
 function StupidMesh(volume, dims) {
   var vertices = [], faces = [], x = [0,0,0], n = 0;
   for(x[2]=0; x[2]<dims[2]; ++x[2])
@@ -2074,168 +761,2999 @@ if(exports) {
   exports.mesher = StupidMesh;
 }
 
-});
+},{}],15:[function(require,module,exports){(function(global){//     keymaster.js
+//     (c) 2011-2012 Thomas Fuchs
+//     keymaster.js may be freely distributed under the MIT license.
 
-require.define("/node_modules/voxel-engine/node_modules/voxel-mesh/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
+;(function(global){
+  var k,
+    _handlers = {},
+    _mods = { 16: false, 18: false, 17: false, 91: false },
+    _scope = 'all',
+    // modifier keys
+    _MODIFIERS = {
+      '⇧': 16, shift: 16,
+      '⌥': 18, alt: 18, option: 18,
+      '⌃': 17, ctrl: 17, control: 17,
+      '⌘': 91, command: 91
+    },
+    // special keys
+    _MAP = {
+      backspace: 8, tab: 9, clear: 12,
+      enter: 13, 'return': 13,
+      esc: 27, escape: 27, space: 32,
+      left: 37, up: 38,
+      right: 39, down: 40,
+      del: 46, 'delete': 46,
+      home: 36, end: 35,
+      pageup: 33, pagedown: 34,
+      ',': 188, '.': 190, '/': 191,
+      '`': 192, '-': 189, '=': 187,
+      ';': 186, '\'': 222,
+      '[': 219, ']': 221, '\\': 220
+    },
+    _downKeys = [];
 
-require.define("/node_modules/voxel-engine/node_modules/voxel-mesh/index.js",function(require,module,exports,__dirname,__filename,process,global){var THREE = require('three')
+  for(k=1;k<20;k++) _MODIFIERS['f'+k] = 111+k;
 
-module.exports = function(data, scaleFactor, mesher) {
-  return new Mesh(data, scaleFactor, mesher)
+  // IE doesn't support Array#indexOf, so have a simple replacement
+  function index(array, item){
+    var i = array.length;
+    while(i--) if(array[i]===item) return i;
+    return -1;
+  }
+
+  // handle keydown event
+  function dispatch(event, scope){
+    var key, handler, k, i, modifiersMatch;
+    key = event.keyCode;
+
+    if (index(_downKeys, key) == -1) {
+        _downKeys.push(key);
+    }
+
+    // if a modifier key, set the key.<modifierkeyname> property to true and return
+    if(key == 93 || key == 224) key = 91; // right command on webkit, command on Gecko
+    if(key in _mods) {
+      _mods[key] = true;
+      // 'assignKey' from inside this closure is exported to window.key
+      for(k in _MODIFIERS) if(_MODIFIERS[k] == key) assignKey[k] = true;
+      return;
+    }
+
+    // see if we need to ignore the keypress (filter() can can be overridden)
+    // by default ignore key presses if a select, textarea, or input is focused
+    if(!assignKey.filter.call(this, event)) return;
+
+    // abort if no potentially matching shortcuts found
+    if (!(key in _handlers)) return;
+
+    // for each potential shortcut
+    for (i = 0; i < _handlers[key].length; i++) {
+      handler = _handlers[key][i];
+
+      // see if it's in the current scope
+      if(handler.scope == scope || handler.scope == 'all'){
+        // check if modifiers match if any
+        modifiersMatch = handler.mods.length > 0;
+        for(k in _mods)
+          if((!_mods[k] && index(handler.mods, +k) > -1) ||
+            (_mods[k] && index(handler.mods, +k) == -1)) modifiersMatch = false;
+        // call the handler and stop the event if neccessary
+        if((handler.mods.length == 0 && !_mods[16] && !_mods[18] && !_mods[17] && !_mods[91]) || modifiersMatch){
+          if(handler.method(event, handler)===false){
+            if(event.preventDefault) event.preventDefault();
+              else event.returnValue = false;
+            if(event.stopPropagation) event.stopPropagation();
+            if(event.cancelBubble) event.cancelBubble = true;
+          }
+        }
+      }
+    }
+  };
+
+  // unset modifier keys on keyup
+  function clearModifier(event){
+    var key = event.keyCode, k,
+        i = index(_downKeys, key);
+
+    // remove key from _downKeys
+    if (i >= 0) {
+        _downKeys.splice(i, 1);
+    }
+
+    if(key == 93 || key == 224) key = 91;
+    if(key in _mods) {
+      _mods[key] = false;
+      for(k in _MODIFIERS) if(_MODIFIERS[k] == key) assignKey[k] = false;
+    }
+  };
+
+  function resetModifiers() {
+    for(k in _mods) _mods[k] = false;
+    for(k in _MODIFIERS) assignKey[k] = false;
+  }
+
+  // parse and assign shortcut
+  function assignKey(key, scope, method){
+    var keys, mods, i, mi;
+    if (method === undefined) {
+      method = scope;
+      scope = 'all';
+    }
+    key = key.replace(/\s/g,'');
+    keys = key.split(',');
+
+    if((keys[keys.length-1])=='')
+      keys[keys.length-2] += ',';
+    // for each shortcut
+    for (i = 0; i < keys.length; i++) {
+      // set modifier keys if any
+      mods = [];
+      key = keys[i].split('+');
+      if(key.length > 1){
+        mods = key.slice(0,key.length-1);
+        for (mi = 0; mi < mods.length; mi++)
+          mods[mi] = _MODIFIERS[mods[mi]];
+        key = [key[key.length-1]];
+      }
+      // convert to keycode and...
+      key = key[0]
+      key = _MAP[key] || key.toUpperCase().charCodeAt(0);
+      // ...store handler
+      if (!(key in _handlers)) _handlers[key] = [];
+      _handlers[key].push({ shortcut: keys[i], scope: scope, method: method, key: keys[i], mods: mods });
+    }
+  };
+
+  // Returns true if the key with code 'keyCode' is currently down
+  // Converts strings into key codes.
+  function isPressed(keyCode) {
+      if (typeof(keyCode)=='string') {
+          if (keyCode.length == 1) {
+              keyCode = (keyCode.toUpperCase()).charCodeAt(0);
+          } else {
+              return false;
+          }
+      }
+      return index(_downKeys, keyCode) != -1;
+  }
+
+  function getPressedKeyCodes() {
+      return _downKeys.slice(0);
+  }
+
+  function filter(event){
+    var tagName = (event.target || event.srcElement).tagName;
+    // ignore keypressed in any elements that support keyboard data input
+    return !(tagName == 'INPUT' || tagName == 'SELECT' || tagName == 'TEXTAREA');
+  }
+
+  // initialize key.<modifier> to false
+  for(k in _MODIFIERS) assignKey[k] = false;
+
+  // set current scope (default 'all')
+  function setScope(scope){ _scope = scope || 'all' };
+  function getScope(){ return _scope || 'all' };
+
+  // delete all handlers for a given scope
+  function deleteScope(scope){
+    var key, handlers, i;
+
+    for (key in _handlers) {
+      handlers = _handlers[key];
+      for (i = 0; i < handlers.length; ) {
+        if (handlers[i].scope === scope) handlers.splice(i, 1);
+        else i++;
+      }
+    }
+  };
+
+  // cross-browser events
+  function addEvent(object, event, method) {
+    if (object.addEventListener)
+      object.addEventListener(event, method, false);
+    else if(object.attachEvent)
+      object.attachEvent('on'+event, function(){ method(window.event) });
+  };
+
+  // set the handlers globally on document
+  addEvent(document, 'keydown', function(event) { dispatch(event, _scope) }); // Passing _scope to a callback to ensure it remains the same by execution. Fixes #48
+  addEvent(document, 'keyup', clearModifier);
+
+  // reset modifiers to false whenever the window is (re)focused.
+  addEvent(window, 'focus', resetModifiers);
+
+  // store previously defined key
+  var previousKey = global.key;
+
+  // restore previously defined key and return reference to our key object
+  function noConflict() {
+    var k = global.key;
+    global.key = previousKey;
+    return k;
+  }
+
+  // set window.key and window.key.set/get/deleteScope, and the default filter
+  global.key = assignKey;
+  global.key.setScope = setScope;
+  global.key.getScope = getScope;
+  global.key.deleteScope = deleteScope;
+  global.key.filter = filter;
+  global.key.isPressed = isPressed;
+  global.key.getPressedKeyCodes = getPressedKeyCodes;
+  global.key.noConflict = noConflict;
+
+  if(typeof module !== 'undefined') module.exports = global.key;
+
+})(this);
+})(window)
+},{}],16:[function(require,module,exports){// shim for using process in browser
+
+var process = module.exports = {};
+
+process.nextTick = (function () {
+    var canSetImmediate = typeof window !== 'undefined'
+    && window.setImmediate;
+    var canPost = typeof window !== 'undefined'
+    && window.postMessage && window.addEventListener
+    ;
+
+    if (canSetImmediate) {
+        return function (f) { return window.setImmediate(f) };
+    }
+
+    if (canPost) {
+        var queue = [];
+        window.addEventListener('message', function (ev) {
+            if (ev.source === window && ev.data === 'process-tick') {
+                ev.stopPropagation();
+                if (queue.length > 0) {
+                    var fn = queue.shift();
+                    fn();
+                }
+            }
+        }, true);
+
+        return function nextTick(fn) {
+            queue.push(fn);
+            window.postMessage('process-tick', '*');
+        };
+    }
+
+    return function nextTick(fn) {
+        setTimeout(fn, 0);
+    };
+})();
+
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
 }
 
-module.exports.Mesh = Mesh
+// TODO(shtylman)
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
 
-function Mesh(data, mesher, scaleFactor) {
-  this.data = data
-  var geometry = this.geometry = new THREE.Geometry()
-  this.scale = scaleFactor || new THREE.Vector3(10, 10, 10)
-  
-  var result = mesher( data.voxels, data.dims )
-  this.meshed = result
-
-  geometry.vertices.length = 0
-  geometry.faces.length = 0
-
-  for (var i = 0; i < result.vertices.length; ++i) {
-    var q = result.vertices[i]
-    geometry.vertices.push(new THREE.Vector3(q[0], q[1], q[2]))
-  } 
-  
-  for (var i = 0; i < result.faces.length; ++i) {
-    geometry.faceVertexUvs[0].push(this.faceVertexUv(i))
-    
-    var q = result.faces[i]
-    if (q.length === 5) {
-      var f = new THREE.Face4(q[0], q[1], q[2], q[3])
-      f.color = new THREE.Color(q[4])
-      f.vertexColors = [f.color,f.color,f.color,f.color]
-      geometry.faces.push(f)
-    } else if (q.length == 4) {
-      var f = new THREE.Face3(q[0], q[1], q[2])
-      f.color = new THREE.Color(q[3])
-      f.vertexColors = [f.color,f.color,f.color]
-      geometry.faces.push(f)
+},{}],17:[function(require,module,exports){(function(process){function filter (xs, fn) {
+    var res = [];
+    for (var i = 0; i < xs.length; i++) {
+        if (fn(xs[i], i, xs)) res.push(xs[i]);
     }
+    return res;
+}
+
+// resolves . and .. elements in a path array with directory names there
+// must be no slashes, empty elements, or device names (c:\) in the array
+// (so also no leading and trailing slashes - it does not distinguish
+// relative and absolute paths)
+function normalizeArray(parts, allowAboveRoot) {
+  // if the path tries to go above the root, `up` ends up > 0
+  var up = 0;
+  for (var i = parts.length; i >= 0; i--) {
+    var last = parts[i];
+    if (last == '.') {
+      parts.splice(i, 1);
+    } else if (last === '..') {
+      parts.splice(i, 1);
+      up++;
+    } else if (up) {
+      parts.splice(i, 1);
+      up--;
+    }
+  }
+
+  // if the path is allowed to go above the root, restore leading ..s
+  if (allowAboveRoot) {
+    for (; up--; up) {
+      parts.unshift('..');
+    }
+  }
+
+  return parts;
+}
+
+// Regex to split a filename into [*, dir, basename, ext]
+// posix version
+var splitPathRe = /^(.+\/(?!$)|\/)?((?:.+?)?(\.[^.]*)?)$/;
+
+// path.resolve([from ...], to)
+// posix version
+exports.resolve = function() {
+var resolvedPath = '',
+    resolvedAbsolute = false;
+
+for (var i = arguments.length; i >= -1 && !resolvedAbsolute; i--) {
+  var path = (i >= 0)
+      ? arguments[i]
+      : process.cwd();
+
+  // Skip empty and invalid entries
+  if (typeof path !== 'string' || !path) {
+    continue;
+  }
+
+  resolvedPath = path + '/' + resolvedPath;
+  resolvedAbsolute = path.charAt(0) === '/';
+}
+
+// At this point the path should be resolved to a full absolute path, but
+// handle relative paths to be safe (might happen when process.cwd() fails)
+
+// Normalize the path
+resolvedPath = normalizeArray(filter(resolvedPath.split('/'), function(p) {
+    return !!p;
+  }), !resolvedAbsolute).join('/');
+
+  return ((resolvedAbsolute ? '/' : '') + resolvedPath) || '.';
+};
+
+// path.normalize(path)
+// posix version
+exports.normalize = function(path) {
+var isAbsolute = path.charAt(0) === '/',
+    trailingSlash = path.slice(-1) === '/';
+
+// Normalize the path
+path = normalizeArray(filter(path.split('/'), function(p) {
+    return !!p;
+  }), !isAbsolute).join('/');
+
+  if (!path && !isAbsolute) {
+    path = '.';
+  }
+  if (path && trailingSlash) {
+    path += '/';
   }
   
-  geometry.computeFaceNormals()
+  return (isAbsolute ? '/' : '') + path;
+};
 
-  geometry.verticesNeedUpdate = true
-  geometry.elementsNeedUpdate = true
-  geometry.normalsNeedUpdate = true
 
-  geometry.computeBoundingBox()
-  geometry.computeBoundingSphere()
+// posix version
+exports.join = function() {
+  var paths = Array.prototype.slice.call(arguments, 0);
+  return exports.normalize(filter(paths, function(p, index) {
+    return p && typeof p === 'string';
+  }).join('/'));
+};
 
-}
 
-Mesh.prototype.createWireMesh = function(hexColor) {    
-  var wireMaterial = new THREE.MeshBasicMaterial({
-    color : hexColor || 0xffffff,
-    wireframe : true
-  })
-  wireMesh = new THREE.Mesh(this.geometry, wireMaterial)
-  wireMesh.scale = this.scale
-  wireMesh.doubleSided = true
-  this.wireMesh = wireMesh
-  return wireMesh
-}
-
-Mesh.prototype.createSurfaceMesh = function(material) {
-  material = material || new THREE.MeshNormalMaterial()
-  var surfaceMesh  = new THREE.Mesh( this.geometry, material )
-  surfaceMesh.scale = this.scale
-  surfaceMesh.doubleSided = false
-  this.surfaceMesh = surfaceMesh
-  return surfaceMesh
-}
-
-Mesh.prototype.addToScene = function(scene) {
-  if (this.wireMesh) scene.add( this.wireMesh )
-  if (this.surfaceMesh) scene.add( this.surfaceMesh )
-}
-
-Mesh.prototype.setPosition = function(x, y, z) {
-  if (this.wireMesh) this.wireMesh.position = new THREE.Vector3(x, y, z)
-  if (this.surfaceMesh) this.surfaceMesh.position = new THREE.Vector3(x, y, z)
-}
-
-Mesh.prototype.faceVertexUv = function(i) {
-  var vs = [
-    this.meshed.vertices[i*4+0],
-    this.meshed.vertices[i*4+1],
-    this.meshed.vertices[i*4+2],
-    this.meshed.vertices[i*4+3]
-  ]
-  var spans = {
-    x0: vs[0][0] - vs[1][0],
-    x1: vs[1][0] - vs[2][0],
-    y0: vs[0][1] - vs[1][1],
-    y1: vs[1][1] - vs[2][1],
-    z0: vs[0][2] - vs[1][2],
-    z1: vs[1][2] - vs[2][2]
-  }
-  var size = {
-    x: Math.max(Math.abs(spans.x0), Math.abs(spans.x1)),
-    y: Math.max(Math.abs(spans.y0), Math.abs(spans.y1)),
-    z: Math.max(Math.abs(spans.z0), Math.abs(spans.z1))
-  }
-  if (size.x === 0) {
-    if (spans.y0 > spans.y1) {
-      var width = size.y
-      var height = size.z
-    }
-    else {
-      var width = size.z
-      var height = size.y
-    }
-  }
-  if (size.y === 0) {
-    if (spans.x0 > spans.x1) {
-      var width = size.x
-      var height = size.z
-    }
-    else {
-      var width = size.z
-      var height = size.x
-    }
-  }
-  if (size.z === 0) {
-    if (spans.x0 > spans.x1) {
-      var width = size.x
-      var height = size.y
-    }
-    else {
-      var width = size.y
-      var height = size.x
-    }
-  }
-  if ((size.z === 0 && spans.x0 < spans.x1) || (size.x === 0 && spans.y0 > spans.y1)) {
-    return [
-      new THREE.Vector2(height, 0),
-      new THREE.Vector2(0, 0),
-      new THREE.Vector2(0, width),
-      new THREE.Vector2(height, width)
-    ]
+exports.dirname = function(path) {
+  var dir = splitPathRe.exec(path)[1] || '';
+  var isWindows = false;
+  if (!dir) {
+    // No dirname
+    return '.';
+  } else if (dir.length === 1 ||
+      (isWindows && dir.length <= 3 && dir.charAt(1) === ':')) {
+    // It is just a slash or a drive letter with a slash
+    return dir;
   } else {
-    return [
-      new THREE.Vector2(0, 0),
-      new THREE.Vector2(0, height),
-      new THREE.Vector2(width, height),
-      new THREE.Vector2(width, 0)
-    ]
+    // It is a full dirname, strip trailing slash
+    return dir.substring(0, dir.length - 1);
+  }
+};
+
+
+exports.basename = function(path, ext) {
+  var f = splitPathRe.exec(path)[2] || '';
+  // TODO: make this comparison case-insensitive on windows?
+  if (ext && f.substr(-1 * ext.length) === ext) {
+    f = f.substr(0, f.length - ext.length);
+  }
+  return f;
+};
+
+
+exports.extname = function(path) {
+  return splitPathRe.exec(path)[3] || '';
+};
+
+exports.relative = function(from, to) {
+  from = exports.resolve(from).substr(1);
+  to = exports.resolve(to).substr(1);
+
+  function trim(arr) {
+    var start = 0;
+    for (; start < arr.length; start++) {
+      if (arr[start] !== '') break;
+    }
+
+    var end = arr.length - 1;
+    for (; end >= 0; end--) {
+      if (arr[end] !== '') break;
+    }
+
+    if (start > end) return [];
+    return arr.slice(start, end - start + 1);
+  }
+
+  var fromParts = trim(from.split('/'));
+  var toParts = trim(to.split('/'));
+
+  var length = Math.min(fromParts.length, toParts.length);
+  var samePartsLength = length;
+  for (var i = 0; i < length; i++) {
+    if (fromParts[i] !== toParts[i]) {
+      samePartsLength = i;
+      break;
+    }
+  }
+
+  var outputParts = [];
+  for (var i = samePartsLength; i < fromParts.length; i++) {
+    outputParts.push('..');
+  }
+
+  outputParts = outputParts.concat(toParts.slice(samePartsLength));
+
+  return outputParts.join('/');
+};
+
+})(require("__browserify_process"))
+},{"__browserify_process":16}],18:[function(require,module,exports){(function(process){if (!process.EventEmitter) process.EventEmitter = function () {};
+
+var EventEmitter = exports.EventEmitter = process.EventEmitter;
+var isArray = typeof Array.isArray === 'function'
+    ? Array.isArray
+    : function (xs) {
+        return Object.prototype.toString.call(xs) === '[object Array]'
+    }
+;
+function indexOf (xs, x) {
+    if (xs.indexOf) return xs.indexOf(x);
+    for (var i = 0; i < xs.length; i++) {
+        if (x === xs[i]) return i;
+    }
+    return -1;
+}
+
+// By default EventEmitters will print a warning if more than
+// 10 listeners are added to it. This is a useful default which
+// helps finding memory leaks.
+//
+// Obviously not all Emitters should be limited to 10. This function allows
+// that to be increased. Set to zero for unlimited.
+var defaultMaxListeners = 10;
+EventEmitter.prototype.setMaxListeners = function(n) {
+  if (!this._events) this._events = {};
+  this._events.maxListeners = n;
+};
+
+
+EventEmitter.prototype.emit = function(type) {
+  // If there is no 'error' event listener then throw.
+  if (type === 'error') {
+    if (!this._events || !this._events.error ||
+        (isArray(this._events.error) && !this._events.error.length))
+    {
+      if (arguments[1] instanceof Error) {
+        throw arguments[1]; // Unhandled 'error' event
+      } else {
+        throw new Error("Uncaught, unspecified 'error' event.");
+      }
+      return false;
+    }
+  }
+
+  if (!this._events) return false;
+  var handler = this._events[type];
+  if (!handler) return false;
+
+  if (typeof handler == 'function') {
+    switch (arguments.length) {
+      // fast cases
+      case 1:
+        handler.call(this);
+        break;
+      case 2:
+        handler.call(this, arguments[1]);
+        break;
+      case 3:
+        handler.call(this, arguments[1], arguments[2]);
+        break;
+      // slower
+      default:
+        var args = Array.prototype.slice.call(arguments, 1);
+        handler.apply(this, args);
+    }
+    return true;
+
+  } else if (isArray(handler)) {
+    var args = Array.prototype.slice.call(arguments, 1);
+
+    var listeners = handler.slice();
+    for (var i = 0, l = listeners.length; i < l; i++) {
+      listeners[i].apply(this, args);
+    }
+    return true;
+
+  } else {
+    return false;
+  }
+};
+
+// EventEmitter is defined in src/node_events.cc
+// EventEmitter.prototype.emit() is also defined there.
+EventEmitter.prototype.addListener = function(type, listener) {
+  if ('function' !== typeof listener) {
+    throw new Error('addListener only takes instances of Function');
+  }
+
+  if (!this._events) this._events = {};
+
+  // To avoid recursion in the case that type == "newListeners"! Before
+  // adding it to the listeners, first emit "newListeners".
+  this.emit('newListener', type, listener);
+
+  if (!this._events[type]) {
+    // Optimize the case of one listener. Don't need the extra array object.
+    this._events[type] = listener;
+  } else if (isArray(this._events[type])) {
+
+    // Check for listener leak
+    if (!this._events[type].warned) {
+      var m;
+      if (this._events.maxListeners !== undefined) {
+        m = this._events.maxListeners;
+      } else {
+        m = defaultMaxListeners;
+      }
+
+      if (m && m > 0 && this._events[type].length > m) {
+        this._events[type].warned = true;
+        console.error('(node) warning: possible EventEmitter memory ' +
+                      'leak detected. %d listeners added. ' +
+                      'Use emitter.setMaxListeners() to increase limit.',
+                      this._events[type].length);
+        console.trace();
+      }
+    }
+
+    // If we've already got an array, just append.
+    this._events[type].push(listener);
+  } else {
+    // Adding the second element, need to change to array.
+    this._events[type] = [this._events[type], listener];
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.on = EventEmitter.prototype.addListener;
+
+EventEmitter.prototype.once = function(type, listener) {
+  var self = this;
+  self.on(type, function g() {
+    self.removeListener(type, g);
+    listener.apply(this, arguments);
+  });
+
+  return this;
+};
+
+EventEmitter.prototype.removeListener = function(type, listener) {
+  if ('function' !== typeof listener) {
+    throw new Error('removeListener only takes instances of Function');
+  }
+
+  // does not use listeners(), so no side effect of creating _events[type]
+  if (!this._events || !this._events[type]) return this;
+
+  var list = this._events[type];
+
+  if (isArray(list)) {
+    var i = indexOf(list, listener);
+    if (i < 0) return this;
+    list.splice(i, 1);
+    if (list.length == 0)
+      delete this._events[type];
+  } else if (this._events[type] === listener) {
+    delete this._events[type];
+  }
+
+  return this;
+};
+
+EventEmitter.prototype.removeAllListeners = function(type) {
+  if (arguments.length === 0) {
+    this._events = {};
+    return this;
+  }
+
+  // does not use listeners(), so no side effect of creating _events[type]
+  if (type && this._events && this._events[type]) this._events[type] = null;
+  return this;
+};
+
+EventEmitter.prototype.listeners = function(type) {
+  if (!this._events) this._events = {};
+  if (!this._events[type]) this._events[type] = [];
+  if (!isArray(this._events[type])) {
+    this._events[type] = [this._events[type]];
+  }
+  return this._events[type];
+};
+
+})(require("__browserify_process"))
+},{"__browserify_process":16}],14:[function(require,module,exports){function lut(red, green, blue, canvas) {
+  var red = red || 32, green = green || 32, blue = blue || 32
+
+  if (!canvas) {
+    canvas = document.createElement('canvas')
+    canvas.width = red * blue
+    canvas.height = green
+  }
+
+  var r, g, b, x, y
+  var ctx = canvas.getContext('2d')
+    , width = red * blue
+    , height = green
+    , data = ctx.getImageData(0, 0, width, height)
+
+  for (r = 0; r < red; r += 1) {
+    for (g = 0; g < green; g += 1) {
+      for (b = 0; b < blue; b += 1) {
+        x = r + b * red
+        y = green - g - 1
+        data.data[(x + y * width)*4    ] = 255 * (r+0.5) / red
+        data.data[(x + y * width)*4 + 1] = 255 * (g+0.5) / green
+        data.data[(x + y * width)*4 + 2] = 255 * (b+0.5) / blue
+        data.data[(x + y * width)*4 + 3] = 255 // Alpha Channel
+      }
+    }
+  }
+
+  ctx.putImageData(data, 0, 0)
+
+  return canvas
+};
+
+module.exports = lut
+
+},{}],19:[function(require,module,exports){/**
+ * @author mrdoob / http://mrdoob.com/
+ */
+
+var Stats = function () {
+
+	var startTime = Date.now(), prevTime = startTime;
+	var ms = 0, msMin = Infinity, msMax = 0;
+	var fps = 0, fpsMin = Infinity, fpsMax = 0;
+	var frames = 0, mode = 0;
+
+	var container = document.createElement( 'div' );
+	container.id = 'stats';
+	container.addEventListener( 'mousedown', function ( event ) { event.preventDefault(); setMode( ++ mode % 2 ) }, false );
+	container.style.cssText = 'width:80px;opacity:0.9;cursor:pointer';
+
+	var fpsDiv = document.createElement( 'div' );
+	fpsDiv.id = 'fps';
+	fpsDiv.style.cssText = 'padding:0 0 3px 3px;text-align:left;background-color:#002';
+	container.appendChild( fpsDiv );
+
+	var fpsText = document.createElement( 'div' );
+	fpsText.id = 'fpsText';
+	fpsText.style.cssText = 'color:#0ff;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:bold;line-height:15px';
+	fpsText.innerHTML = 'FPS';
+	fpsDiv.appendChild( fpsText );
+
+	var fpsGraph = document.createElement( 'div' );
+	fpsGraph.id = 'fpsGraph';
+	fpsGraph.style.cssText = 'position:relative;width:74px;height:30px;background-color:#0ff';
+	fpsDiv.appendChild( fpsGraph );
+
+	while ( fpsGraph.children.length < 74 ) {
+
+		var bar = document.createElement( 'span' );
+		bar.style.cssText = 'width:1px;height:30px;float:left;background-color:#113';
+		fpsGraph.appendChild( bar );
+
+	}
+
+	var msDiv = document.createElement( 'div' );
+	msDiv.id = 'ms';
+	msDiv.style.cssText = 'padding:0 0 3px 3px;text-align:left;background-color:#020;display:none';
+	container.appendChild( msDiv );
+
+	var msText = document.createElement( 'div' );
+	msText.id = 'msText';
+	msText.style.cssText = 'color:#0f0;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:bold;line-height:15px';
+	msText.innerHTML = 'MS';
+	msDiv.appendChild( msText );
+
+	var msGraph = document.createElement( 'div' );
+	msGraph.id = 'msGraph';
+	msGraph.style.cssText = 'position:relative;width:74px;height:30px;background-color:#0f0';
+	msDiv.appendChild( msGraph );
+
+	while ( msGraph.children.length < 74 ) {
+
+		var bar = document.createElement( 'span' );
+		bar.style.cssText = 'width:1px;height:30px;float:left;background-color:#131';
+		msGraph.appendChild( bar );
+
+	}
+
+	var setMode = function ( value ) {
+
+		mode = value;
+
+		switch ( mode ) {
+
+			case 0:
+				fpsDiv.style.display = 'block';
+				msDiv.style.display = 'none';
+				break;
+			case 1:
+				fpsDiv.style.display = 'none';
+				msDiv.style.display = 'block';
+				break;
+		}
+
+	}
+
+	var updateGraph = function ( dom, value ) {
+
+		var child = dom.appendChild( dom.firstChild );
+		child.style.height = value + 'px';
+
+	}
+
+	return {
+
+		REVISION: 11,
+
+		domElement: container,
+
+		setMode: setMode,
+
+		begin: function () {
+
+			startTime = Date.now();
+
+		},
+
+		end: function () {
+
+			var time = Date.now();
+
+			ms = time - startTime;
+			msMin = Math.min( msMin, ms );
+			msMax = Math.max( msMax, ms );
+
+			msText.textContent = ms + ' MS (' + msMin + '-' + msMax + ')';
+			updateGraph( msGraph, Math.min( 30, 30 - ( ms / 200 ) * 30 ) );
+
+			frames ++;
+
+			if ( time > prevTime + 1000 ) {
+
+				fps = Math.round( ( frames * 1000 ) / ( time - prevTime ) );
+				fpsMin = Math.min( fpsMin, fps );
+				fpsMax = Math.max( fpsMax, fps );
+
+				fpsText.textContent = fps + ' FPS (' + fpsMin + '-' + fpsMax + ')';
+				updateGraph( fpsGraph, Math.min( 30, 30 - ( fps / 100 ) * 30 ) );
+
+				prevTime = time;
+				frames = 0;
+
+			}
+
+			return time;
+
+		},
+
+		update: function () {
+
+			startTime = this.end();
+
+		}
+
+	}
+
+};
+
+module.exports = Stats
+},{}],5:[function(require,module,exports){module.exports = function(game) {
+  var THREE = game.THREE
+    , EffectComposer = Composer.EffectComposer = require('three-effectcomposer')(THREE)
+    , renderer = game.renderer || game.view.renderer
+    , used = false
+    , composer
+
+  game.render = function render() {
+    return used ? composer.composer.render() : renderer.render(game.scene, game.camera)
+  };
+
+  function Composer() {
+    var composer = this.composer = new EffectComposer(renderer)
+    composer.passes.push(new EffectComposer.RenderPass(game.scene, game.camera))
+
+    this.passes = composer.passes
+    this.updateRenderToScreen()
+  };
+
+  Composer.prototype.use = function(params) {
+    params = params || {}
+    if (typeof params === 'string') params = {
+      fragmentShader: params
+    }
+
+    params.fragmentShader = params.fragmentShader || EffectComposer.CopyShader.fragmentShader
+    params.vertexShader = params.vertexShader || EffectComposer.CopyShader.vertexShader
+    params.uniforms = THREE.UniformsUtils.merge([ EffectComposer.CopyShader.uniforms, params.uniforms || {} ])
+
+    this.passes.push(new EffectComposer.ShaderPass(params))
+    this.updateRenderToScreen()
+
+    return this
+  };
+
+  Composer.prototype.addPass = function(pass, params) {
+    if (typeof pass === 'string') {
+      pass = EffectComposer[pass].apply(this, [].slice.call(arguments, 1))
+    }
+    this.composer.addPass(pass)
+    this.updateRenderToScreen()
+
+    return pass
+  };
+
+  Composer.prototype.updateRenderToScreen = function() {
+    used = this.passes.length > 1
+    this.passes.slice(0, -1).forEach(function(pass) {
+      pass.renderToScreen = false
+    })
+    this.passes.slice(-1).forEach(function(pass) {
+      pass.renderToScreen = true
+    })
+  };
+
+  Composer.prototype.EffectComposer = EffectComposer
+  Composer.prototype.ClearMaskPass = EffectComposer.ClearMaskPass
+  Composer.prototype.CopyShader = EffectComposer.CopyShader
+  Composer.prototype.ShaderPass = EffectComposer.ShaderPass
+  Composer.prototype.RenderPass = EffectComposer.RenderPass
+  Composer.prototype.MaskPass = EffectComposer.MaskPass
+  Composer.prototype.THREE = THREE
+
+  composer = new Composer
+
+  return composer
+};
+
+},{"three-effectcomposer":20}],21:[function(require,module,exports){/**
+ * @author alteredq / http://alteredqualia.com/
+ * @author mr.doob / http://mrdoob.com/
+ */
+
+module.exports = function() {
+  return {
+  	canvas : !! window.CanvasRenderingContext2D,
+  	webgl : ( function () { try { return !! window.WebGLRenderingContext && !! document.createElement( 'canvas' ).getContext( 'experimental-webgl' ); } catch( e ) { return false; } } )(),
+  	workers : !! window.Worker,
+  	fileapi : window.File && window.FileReader && window.FileList && window.Blob,
+
+  	getWebGLErrorMessage : function () {
+
+  		var domElement = document.createElement( 'div' );
+
+  		domElement.style.fontFamily = 'monospace';
+  		domElement.style.fontSize = '13px';
+  		domElement.style.textAlign = 'center';
+  		domElement.style.background = '#eee';
+  		domElement.style.color = '#000';
+  		domElement.style.padding = '1em';
+  		domElement.style.width = '475px';
+  		domElement.style.margin = '5em auto 0';
+
+  		if ( ! this.webgl ) {
+
+  			domElement.innerHTML = window.WebGLRenderingContext ? [
+  				'Your graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation">WebGL</a>.<br />',
+  				'Find out how to get it <a href="http://get.webgl.org/">here</a>.'
+  			].join( '\n' ) : [
+  				'Your browser does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation">WebGL</a>.<br/>',
+  				'Find out how to get it <a href="http://get.webgl.org/">here</a>.'
+  			].join( '\n' );
+
+  		}
+
+  		return domElement;
+
+  	},
+
+  	addGetWebGLMessage : function ( parameters ) {
+
+  		var parent, id, domElement;
+
+  		parameters = parameters || {};
+
+  		parent = parameters.parent !== undefined ? parameters.parent : document.body;
+  		id = parameters.id !== undefined ? parameters.id : 'oldie';
+
+  		domElement = Detector.getWebGLErrorMessage();
+  		domElement.id = id;
+
+  		parent.appendChild( domElement );
+
+  	}
+
+  };
+}
+
+},{}],4:[function(require,module,exports){var skin = require('minecraft-skin');
+
+module.exports = function (game) {
+    var mountPoint;
+    var possessed;
+    
+    return function (img, skinOpts) {
+        if (!skinOpts) {
+          skinOpts = {};
+        }
+        skinOpts.scale = skinOpts.scale || new game.THREE.Vector3(0.04, 0.04, 0.04);
+        var playerSkin = skin(game.THREE, img, skinOpts);
+        var player = playerSkin.mesh;
+        var physics = game.makePhysical(player);
+        physics.playerSkin = playerSkin;
+        
+        player.position.set(0, 562, -20);
+        game.scene.add(player);
+        game.addItem(physics);
+        
+        physics.yaw = player;
+        physics.pitch = player.head;
+        physics.subjectTo(game.gravity);
+        physics.blocksCreation = true;
+        
+        game.control(physics);
+        
+        physics.move = function (x, y, z) {
+            var xyz = parseXYZ(x, y, z);
+            physics.yaw.position.x += xyz.x;
+            physics.yaw.position.y += xyz.y;
+            physics.yaw.position.z += xyz.z;
+        };
+        
+        physics.moveTo = function (x, y, z) {
+            var xyz = parseXYZ(x, y, z);
+            physics.yaw.position.x = xyz.x;
+            physics.yaw.position.y = xyz.y;
+            physics.yaw.position.z = xyz.z;
+        };
+        
+        var pov = 1;
+        physics.pov = function (type) {
+            if (type === 'first' || type === 1) {
+                pov = 1;
+            }
+            else if (type === 'third' || type === 3) {
+                pov = 3;
+            }
+            physics.possess();
+        };
+        
+        physics.toggle = function () {
+            physics.pov(pov === 1 ? 3 : 1);
+        };
+        
+        physics.possess = function () {
+            if (possessed) possessed.remove(game.camera);
+            var key = pov === 1 ? 'cameraInside' : 'cameraOutside';
+            player[key].add(game.camera);
+            possessed = player[key];
+        };
+        
+        physics.position = physics.yaw.position;
+        
+        return physics;
+    }
+};
+
+function parseXYZ (x, y, z) {
+    if (typeof x === 'object' && Array.isArray(x)) {
+        return { x: x[0], y: x[1], z: x[2] };
+    }
+    else if (typeof x === 'object') {
+        return { x: x.x || 0, y: x.y || 0, z: x.z || 0 };
+    }
+    return { x: Number(x), y: Number(y), z: Number(z) };
+}
+
+},{"minecraft-skin":22}],7:[function(require,module,exports){var keymaster = require('./lib/keymaster.js')
+var inherits = require('inherits')
+var events = require('events')
+var elementClass = require('element-class')
+
+var keyTable =
+  {   8 : 'backspace'
+  ,   9 : 'tab'
+  ,  13 : 'enter'
+  ,  16 : 'shift'
+  ,  17 : 'ctrl'
+  ,  18 : 'alt'
+  ,  19 : 'pausebreak'
+  ,  20 : 'capslock'
+  ,  27 : 'esc'
+  ,  32 : 'spacebar'
+  ,  33 : 'pageup'
+  ,  34 : 'pagedown'
+  ,  35 : 'end'
+  ,  36 : 'home'
+  ,  37 : 'left'
+  ,  38 : 'up'
+  ,  39 : 'right'
+  ,  40 : 'down'
+  ,  45 : 'ins'
+  ,  46 : 'del'
+  ,  48 : '0'
+  ,  49 : '1'
+  ,  50 : '2'
+  ,  51 : '3'
+  ,  52 : '4'
+  ,  53 : '5'
+  ,  54 : '6'
+  ,  55 : '7'
+  ,  56 : '8'
+  ,  57 : '9'
+  ,  65 : 'a'
+  ,  66 : 'b'
+  ,  67 : 'c'
+  ,  68 : 'd'
+  ,  69 : 'e'
+  ,  70 : 'f'
+  ,  71 : 'g'
+  ,  72 : 'h'
+  ,  73 : 'i'
+  ,  74 : 'j'
+  ,  75 : 'k'
+  ,  76 : 'l'
+  ,  77 : 'm'
+  ,  78 : 'n'
+  ,  79 : 'o'
+  ,  80 : 'p'
+  ,  81 : 'q'
+  ,  82 : 'r'
+  ,  83 : 's'
+  ,  84 : 't'
+  ,  85 : 'u'
+  ,  86 : 'v'
+  ,  87 : 'w'
+  ,  88 : 'x'
+  ,  89 : 'y'
+  ,  90 : 'z'
+  ,  93 : 'select'
+  ,  96 : 'num_0'
+  ,  97 : 'num_1'
+  ,  98 : 'num_2'
+  ,  99 : 'num_3'
+  , 100 : 'num_4'
+  , 101 : 'num_5'
+  , 102 : 'num_6'
+  , 103 : 'num_7'
+  , 104 : 'num_8'
+  , 105 : 'num_9'
+  , 106 : 'multiply'
+  , 107 : 'add'
+  , 109 : 'subtract'
+  , 110 : 'decimalpoint'
+  , 111 : 'divide'
+  , 112 : 'f1'
+  , 113 : 'f2'
+  , 114 : 'f3'
+  , 115 : 'f4'
+  , 116 : 'f5'
+  , 117 : 'f6'
+  , 118 : 'f7'
+  , 119 : 'f8'
+  , 120 : 'f9'
+  , 121 : 'f10'
+  , 122 : 'f11'
+  , 123 : 'f12'
+  , 144 : 'numlock'
+  , 145 : 'scrolllock'
+  , 186 : 'semicolon'
+  , 187 : 'equalsign'
+  , 188 : 'comma'
+  , 189 : 'dash'
+  , 190 : 'period'
+  , 191 : 'forwardslash'
+  , 192 : 'graveaccent'
+  , 219 : 'openbracket'
+  , 220 : 'backslash'
+  , 221 : 'closebraket'
+  , 222 : 'singlequote'
+}
+
+module.exports = function(opts) {
+  return new HUD(opts)
+}
+
+function HUD(opts) {
+  if (!(this instanceof HUD)) return new HUD(opts)
+  var self = this
+  if (!opts) opts = {}
+  if (opts instanceof HTMLElement) opts = {el: opts}
+  this.opts = opts
+  this.el = opts.el || 'nav'
+  if (typeof this.el !== 'object') this.el = document.querySelector(this.el)
+  this.toolbarKeys = opts.toolbarKeys || ['1','2','3','4','5','6','7','8','9','0']
+  this.bindEvents()
+}
+
+inherits(HUD, events.EventEmitter)
+
+HUD.prototype.onKeyDown = function() {
+  var self = this
+  keymaster.getPressedKeyCodes().map(function(keyCode) {
+    var pressed = keyTable[keyCode]
+    if (self.toolbarKeys.indexOf(pressed) > -1) return self.switchToolbar(pressed)
+  })
+}
+
+HUD.prototype.bindEvents = function() {
+  var self = this
+  if (!this.opts.noKeydown) window.addEventListener('keydown', this.onKeyDown.bind(this))
+  var list = this.el.querySelectorAll('li')
+  list = Array.prototype.slice.call(list);
+  list.map(function(li) { 
+    li.addEventListener('click', self.onItemClick.bind(self))
+  })
+}
+
+HUD.prototype.onItemClick = function(ev) {
+  ev.preventDefault()
+  var idx = this.toolbarIndexOf(ev.currentTarget)
+  if (idx > -1) this.switchToolbar(idx)
+}
+
+HUD.prototype.addClass = function(el, className) {
+  if (!el) return
+  return elementClass(el).add(className)
+}
+
+HUD.prototype.removeClass = function(el, className) {
+  if (!el) return
+  return elementClass(el).remove(className)
+}
+
+HUD.prototype.toolbarIndexOf = function(li) {
+  var list = this.el.querySelectorAll('.tab-item') 
+  list = Array.prototype.slice.call(list)
+  var idx = list.indexOf(li)
+  if (idx > -1) ++idx
+  return idx
+}
+
+HUD.prototype.switchToolbar = function(num) {
+  this.removeClass(this.el.querySelector('.active'), 'active')
+  var selected = this.el.querySelectorAll('.tab-item')[+num-1]
+  this.addClass(selected, 'active')
+  var active = this.el.querySelector('.active .tab-label')
+  if (!active) return
+  var dataID = active.getAttribute('data-id')
+  this.emit('select', dataID ? dataID : active.innerText)
+}
+},{"events":18,"./lib/keymaster.js":15,"inherits":23,"element-class":24}],13:[function(require,module,exports){var sampleAs3DTexture = require('webgl-texture3d')(null, 33)
+
+module.exports = function(composer) {
+  var THREE = composer.THREE
+  var shader = {
+    vertexShader: composer.CopyShader.vertexShader,
+    fragmentShader: [
+      "uniform sampler2D tDiffuse;",
+      "uniform sampler2D tColorist;",
+      "varying vec2 vUv;",
+
+      sampleAs3DTexture,
+
+      "void main() {",
+
+        // Using a 33^3 table instead of 32^3, because for some reason
+        // the pixels get weird at that resolution.
+        "vec4 texel = texture2D( tDiffuse, vUv );",
+        "vec4 mapped = sampleAs3DTexture(tColorist, texel.rgb);",
+        "gl_FragColor = mapped;",
+
+      "}"
+    ].join('\n')
+  }
+
+  shader.uniforms = THREE.UniformsUtils.merge([
+    composer.CopyShader.uniforms, {
+      tColorist: { type: 't', value: null }
+    }
+  ])
+
+  return shader
+};
+
+},{"webgl-texture3d":25}],8:[function(require,module,exports){var events = require('events')
+var inherits = require('inherits')
+
+module.exports = function(opts) {
+  return new Chunker(opts)
+}
+
+module.exports.Chunker = Chunker
+
+function Chunker(opts) {
+  this.distance = opts.chunkDistance || 2
+  this.chunkSize = opts.chunkSize || 32
+  this.cubeSize = opts.cubeSize || 25
+  this.generateVoxelChunk = opts.generateVoxelChunk
+  this.chunks = {}
+  this.meshes = {}
+}
+
+inherits(Chunker, events.EventEmitter)
+
+Chunker.prototype.nearbyChunks = function(position, distance) {
+  var current = this.chunkAtPosition(position)
+  var x = current[0]
+  var y = current[1]
+  var z = current[2]
+  var dist = distance || this.distance
+  var nearby = []
+  for (var cx = (x - dist); cx !== (x + dist); ++cx) {
+    for (var cy = (y - dist); cy !== (y + dist); ++cy) {
+      for (var cz = (z - dist); cz !== (z + dist); ++cz) {
+        nearby.push([cx, cy, cz])
+      }
+    }
+  }
+  return nearby
+}
+
+Chunker.prototype.requestMissingChunks = function(position) {
+  var self = this
+  this.nearbyChunks(position).map(function(chunk) {
+    if (!self.chunks[chunk.join('|')]) {
+      self.emit('missingChunk', chunk)
+    }
+  })
+}
+
+Chunker.prototype.getBounds = function(x, y, z) {
+  var size = this.chunkSize
+  var low = [x * size, y * size, z * size]
+  var high = [low[0] + size, low[1] + size, low[2] + size]
+  return [low, high]
+}
+
+Chunker.prototype.generateChunk = function(x, y, z) {
+  var self = this
+  var bounds = this.getBounds(x, y, z)
+  var chunk = this.generateVoxelChunk(bounds[0], bounds[1], x, y, z)
+  var position = [x, y, z]
+  chunk.position = position
+  this.chunks[position.join('|')] = chunk
+  return chunk
+}
+
+Chunker.prototype.chunkAtPosition = function(position) {
+  var chunkSize = this.chunkSize
+  var cubeSize = this.cubeSize
+  var cx = position[0] / cubeSize / chunkSize
+  var cy = position[1] / cubeSize / chunkSize
+  var cz = position[2] / cubeSize / chunkSize
+  var chunkPos = [Math.floor(cx), Math.floor(cy), Math.floor(cz)]
+  return chunkPos
+};
+
+Chunker.prototype.voxelIndex = function(voxelVector) {
+  var size = this.chunkSize
+  var vidx = voxelVector[0] + voxelVector[1]*size + voxelVector[2]*size*size
+  return vidx
+}
+
+Chunker.prototype.voxelIndexFromPosition = function(pos) {
+  var v = this.voxelVector(pos)
+  return this.voxelIndex(v)
+}
+
+Chunker.prototype.voxelAtPosition = function(pos, val) {
+  var ckey = this.chunkAtPosition(pos).join('|')
+  var chunk = this.chunks[ckey]
+  if (!chunk) return false
+  var vector = this.voxelVector(pos)
+  var vidx = this.voxelIndex(vector)
+  if (!vidx && vidx !== 0) return false
+  if (typeof val !== 'undefined') {
+    chunk.voxels[vidx] = val
+  }
+  var v = chunk.voxels[vidx]
+  return v
+}
+
+Chunker.prototype.voxelVector = function(pos) {
+  var size = this.chunkSize
+  var cubeSize = this.cubeSize
+  var vx = (size + Math.floor(pos[0] / cubeSize) % size) % size
+  var vy = (size + Math.floor(pos[1] / cubeSize) % size) % size
+  var vz = (size + Math.floor(pos[2] / cubeSize) % size) % size
+  return [Math.abs(vx), Math.abs(vy), Math.abs(vz)]
+};
+
+},{"events":18,"inherits":26}],23:[function(require,module,exports){module.exports = inherits
+
+function inherits (c, p, proto) {
+  proto = proto || {}
+  var e = {}
+  ;[c.prototype, proto].forEach(function (s) {
+    Object.getOwnPropertyNames(s).forEach(function (k) {
+      e[k] = Object.getOwnPropertyDescriptor(s, k)
+    })
+  })
+  c.prototype = Object.create(p.prototype, e)
+  c.super = p
+}
+
+//function Child () {
+//  Child.super.call(this)
+//  console.error([this
+//                ,this.constructor
+//                ,this.constructor === Child
+//                ,this.constructor.super === Parent
+//                ,Object.getPrototypeOf(this) === Child.prototype
+//                ,Object.getPrototypeOf(Object.getPrototypeOf(this))
+//                 === Parent.prototype
+//                ,this instanceof Child
+//                ,this instanceof Parent])
+//}
+//function Parent () {}
+//inherits(Child, Parent)
+//new Child
+
+},{}],24:[function(require,module,exports){module.exports = function(opts) {
+  return new ElementClass(opts)
+}
+
+function ElementClass(opts) {
+  if (!(this instanceof ElementClass)) return new ElementClass(opts)
+  var self = this
+  if (!opts) opts = {}
+  if (opts instanceof HTMLElement) opts = {el: opts}
+  this.opts = opts
+  this.el = opts.el || document.body
+  if (typeof this.el !== 'object') this.el = document.querySelector(this.el)
+}
+
+ElementClass.prototype.add = function(className) {
+  var el = this.el
+  if (!el) return
+  if (el.className === "") return el.className = className
+  var classes = el.className.split(' ')
+  if (classes.indexOf(className) > -1) return classes
+  classes.push(className)
+  el.className = classes.join(' ')
+  return classes
+}
+
+ElementClass.prototype.remove = function(className) {
+  var el = this.el
+  if (!el) return
+  if (el.className === "") return
+  var classes = el.className.split(' ')
+  var idx = classes.indexOf(className)
+  if (idx > -1) classes.splice(idx, 1)
+  el.className = classes.join(' ')
+  return classes
+}
+
+},{}],22:[function(require,module,exports){var THREE
+
+module.exports = function(three, image, opts) {
+  return new Skin(three, image, opts)
+}
+
+function Skin(three, image, opts) {
+  if (opts) opts.image = opts.image || image
+  else opts = { image: image }
+  if (typeof image === 'object' && !(image instanceof HTMLElement)) opts = image
+  THREE = three // hack until three.js fixes multiple instantiation
+  this.sizeRatio = opts.sizeRatio || 8
+  this.scale = opts.scale || new three.Vector3(1, 1, 1)
+  this.fallbackImage = opts.fallbackImage || 'skin.png'
+  this.createCanvases()
+  this.charMaterial = this.getMaterial(this.skin, false)
+	this.charMaterialTrans = this.getMaterial(this.skin, true)
+  if (typeof opts.image === "string") this.fetchImage(opts.image)
+  if (opts.image instanceof HTMLElement) this.setImage(opts.image)
+  this.mesh = this.createPlayerObject()
+}
+
+Skin.prototype.createCanvases = function() {
+  this.skinBig = document.createElement('canvas')
+	this.skinBigContext = this.skinBig.getContext('2d')
+	this.skinBig.width = 64 * this.sizeRatio
+	this.skinBig.height = 32 * this.sizeRatio
+  
+  this.skin = document.createElement('canvas')
+	this.skinContext = this.skin.getContext('2d')
+	this.skin.width = 64
+	this.skin.height = 32
+}
+
+Skin.prototype.fetchImage = function(imageURL) {
+  var self = this
+  this.image = new Image()
+  this.image.src = imageURL
+  this.image.onload = function() {
+    self.setImage(self.image)
   }
 }
-;
 
-});
+Skin.prototype.setImage = function (skin) {
+  this.image = skin
+	this.skinContext.clearRect(0, 0, 64, 32);
+	
+	this.skinContext.drawImage(skin, 0, 0);
+	
+	var imgdata = this.skinContext.getImageData(0, 0, 64, 32);
+	var pixels = imgdata.data;
 
-require.define("/node_modules/voxel-engine/node_modules/three/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./three.js"}
-});
+	this.skinBigContext.clearRect(0, 0, this.skinBig.width, this.skinBig.height);
+	this.skinBigContext.save();
+	
+	var isOnecolor = true;
+	
+	var colorCheckAgainst = [40, 0];
+	var colorIndex = (colorCheckAgainst[0]+colorCheckAgainst[1]*64)*4;
+	
+	var isPixelDifferent = function (x, y) {
+		if(pixels[(x+y*64)*4+0] !== pixels[colorIndex+0] || pixels[(x+y*64)*4+1] !== pixels[colorIndex+1] || pixels[(x+y*64)*4+2] !== pixels[colorIndex+2] || pixels[(x+y*64)*4+3] !== pixels[colorIndex+3]) {
+			return true;
+		}
+		return false;
+	};
+	
+	// Check if helmet/hat is a solid color
+	// Bottom row
+	for(var i=32; i < 64; i+=1) {
+		for(var j=8; j < 16; j+=1) {
+			if(isPixelDifferent(i, j)) {
+				isOnecolor = false;
+				break;
+			}
+		}
+		if(!isOnecolor) {
+			break;
+		}
+	}
+	if(!isOnecolor) {
+		// Top row
+		for(var i=40; i < 56; i+=1) {
+			for(var j=0; j < 8; j+=1) {
+				if(isPixelDifferent(i, j)) {
+					isOnecolor = false;
+					break;
+				}
+			}
+			if(!isOnecolor) {
+				break;
+			}
+			
+		}
+	}
+	
+	for(var i=0; i < 64; i+=1) {
+	  for(var j=0; j < 32; j+=1) {
+  	  if(isOnecolor && ((i >= 32 && i < 64 && j >= 8 && j < 16) || (i >= 40 && i < 56 && j >= 0 && j < 8))) {
+  			pixels[(i+j*64)*4+3] = 0
+  		}
+  		this.skinBigContext.fillStyle = 'rgba('+pixels[(i+j*64)*4+0]+', '+pixels[(i+j*64)*4+1]+', '+pixels[(i+j*64)*4+2]+', '+pixels[(i+j*64)*4+3]/255+')';
+  		this.skinBigContext.fillRect(i * this.sizeRatio, j * this.sizeRatio, this.sizeRatio, this.sizeRatio);
+  	}
+	}
+  
+	this.skinBigContext.restore();
+	
+	this.skinContext.putImageData(imgdata, 0, 0);
+	
+  this.charMaterial.map.needsUpdate = true;
+  this.charMaterialTrans.map.needsUpdate = true;
+  	
+};
 
-require.define("/node_modules/voxel-engine/node_modules/three/three.js",function(require,module,exports,__dirname,__filename,process,global){
+Skin.prototype.getMaterial = function(img, transparent) {
+	var texture		= new THREE.Texture(img);
+	texture.magFilter	= THREE.NearestFilter;
+	texture.minFilter	= THREE.NearestFilter;
+	texture.format		= transparent ? THREE.RGBAFormat : THREE.RGBFormat;
+	texture.needsUpdate	= true;
+	var material	= new THREE.MeshBasicMaterial({
+		map		: texture,
+		transparent	: transparent ? true : false
+	});
+	return material;
+}
+
+Skin.prototype.UVMap = function(mesh, face, x, y, w, h, rotateBy) {
+	if (!rotateBy) rotateBy = 0;
+	var uvs = mesh.geometry.faceVertexUvs[0][face];
+	var tileU = x;
+	var tileV = y;
+	var tileUvWidth = 1/64;
+	var tileUvHeight = 1/32;
+  uvs[ (0 + rotateBy) % 4 ].x = (tileU * tileUvWidth)
+  uvs[ (0 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight)
+  uvs[ (1 + rotateBy) % 4 ].x = (tileU * tileUvWidth)
+  uvs[ (1 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight + h * tileUvHeight)
+  uvs[ (2 + rotateBy) % 4 ].x = (tileU * tileUvWidth + w * tileUvWidth)
+  uvs[ (2 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight + h * tileUvHeight)
+  uvs[ (3 + rotateBy) % 4 ].x = (tileU * tileUvWidth + w * tileUvWidth)
+  uvs[ (3 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight)
+}
+
+Skin.prototype.cubeFromPlanes = function (size, mat) {
+	var cube = new THREE.Object3D();
+	var meshes = [];
+	for(var i=0; i < 6; i++) {
+		var mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+		mesh.doubleSided = true;
+		cube.add(mesh);
+		meshes.push(mesh);
+	}
+	// Front
+	meshes[0].rotation.x = Math.PI/2;
+	meshes[0].rotation.z = -Math.PI/2;
+	meshes[0].position.x = size/2;
+	
+	// Back
+	meshes[1].rotation.x = Math.PI/2;
+	meshes[1].rotation.z = Math.PI/2;
+	meshes[1].position.x = -size/2;
+	
+	// Top
+	meshes[2].position.y = size/2;
+	
+	// Bottom
+	meshes[3].rotation.y = Math.PI;
+	meshes[3].rotation.z = Math.PI;
+	meshes[3].position.y = -size/2;
+	
+	// Left
+	meshes[4].rotation.x = Math.PI/2;
+	meshes[4].position.z = size/2;
+	
+	// Right
+	meshes[5].rotation.x = -Math.PI/2;
+	meshes[5].rotation.y = Math.PI;
+	meshes[5].position.z = -size/2;
+	
+	return cube;
+}
+
+//exporting these meshes for manipulation:
+//leftLeg
+//rightLeg
+//leftArm
+//rightArm
+//body
+//head
+//upperBody
+
+Skin.prototype.createPlayerObject = function(scene) {
+  var headgroup = new THREE.Object3D();
+	var upperbody = this.upperBody = new THREE.Object3D();
+	
+	// Left leg
+	var leftleggeo = new THREE.CubeGeometry(4, 12, 4);
+	for(var i=0; i < 8; i+=1) {
+		leftleggeo.vertices[i].y -= 6;
+	}
+	var leftleg = this.leftLeg = new THREE.Mesh(leftleggeo, this.charMaterial);
+	leftleg.position.z = -2;
+	leftleg.position.y = -6;
+	this.UVMap(leftleg, 0, 8, 20, -4, 12);
+	this.UVMap(leftleg, 1, 16, 20, -4, 12);
+	this.UVMap(leftleg, 2, 4, 16, 4, 4, 3);
+	this.UVMap(leftleg, 3, 8, 20, 4, -4, 1);
+	this.UVMap(leftleg, 4, 12, 20, -4, 12);
+	this.UVMap(leftleg, 5, 4, 20, -4, 12);
+
+	// Right leg
+	var rightleggeo = new THREE.CubeGeometry(4, 12, 4);
+	for(var i=0; i < 8; i+=1) {
+		rightleggeo.vertices[i].y -= 6;
+	}
+	var rightleg = this.rightLeg =new THREE.Mesh(rightleggeo, this.charMaterial);
+	rightleg.position.z = 2;
+	rightleg.position.y = -6;
+  this.UVMap(rightleg, 0, 4, 20, 4, 12);
+  this.UVMap(rightleg, 1, 12, 20, 4, 12);
+  this.UVMap(rightleg, 2, 8, 16, -4, 4, 3);
+  this.UVMap(rightleg, 3, 12, 20, -4, -4, 1);
+  this.UVMap(rightleg, 4, 0, 20, 4, 12);
+  this.UVMap(rightleg, 5, 8, 20, 4, 12);
+	
+	// Body
+	var bodygeo = new THREE.CubeGeometry(4, 12, 8);
+	var bodymesh = this.body = new THREE.Mesh(bodygeo, this.charMaterial);
+	this.UVMap(bodymesh, 0, 20, 20, 8, 12);
+	this.UVMap(bodymesh, 1, 32, 20, 8, 12);
+	this.UVMap(bodymesh, 2, 20, 16, 8, 4, 1);
+	this.UVMap(bodymesh, 3, 28, 16, 8, 4, 3);
+	this.UVMap(bodymesh, 4, 16, 20, 4, 12);
+	this.UVMap(bodymesh, 5, 28, 20, 4, 12);
+	upperbody.add(bodymesh);
+	
+	
+	// Left arm
+	var leftarmgeo = new THREE.CubeGeometry(4, 12, 4);
+	for(var i=0; i < 8; i+=1) {
+		leftarmgeo.vertices[i].y -= 4;
+	}
+	var leftarm = this.leftArm = new THREE.Mesh(leftarmgeo, this.charMaterial);
+	leftarm.position.z = -6;
+	leftarm.position.y = 4;
+	leftarm.rotation.x = Math.PI/32;
+	this.UVMap(leftarm, 0, 48, 20, -4, 12);
+	this.UVMap(leftarm, 1, 56, 20, -4, 12);
+	this.UVMap(leftarm, 2, 48, 16, -4, 4, 1);
+	this.UVMap(leftarm, 3, 52, 16, -4, 4, 3);
+	this.UVMap(leftarm, 4, 52, 20, -4, 12);
+	this.UVMap(leftarm, 5, 44, 20, -4, 12);
+	upperbody.add(leftarm);
+	
+	// Right arm
+	var rightarmgeo = new THREE.CubeGeometry(4, 12, 4);
+	for(var i=0; i < 8; i+=1) {
+		rightarmgeo.vertices[i].y -= 4;
+	}
+	var rightarm =this.rightArm = new THREE.Mesh(rightarmgeo, this.charMaterial);
+	rightarm.position.z = 6;
+	rightarm.position.y = 4;
+	rightarm.rotation.x = -Math.PI/32;
+	this.UVMap(rightarm, 0, 44, 20, 4, 12);
+	this.UVMap(rightarm, 1, 52, 20, 4, 12);
+	this.UVMap(rightarm, 2, 44, 16, 4, 4, 1);
+	this.UVMap(rightarm, 3, 48, 16, 4, 4, 3);
+	this.UVMap(rightarm, 4, 40, 20, 4, 12);
+	this.UVMap(rightarm, 5, 48, 20, 4, 12);
+	upperbody.add(rightarm);
+	
+	//Head
+	var headgeo = new THREE.CubeGeometry(8, 8, 8);
+	var headmesh = this.head = new THREE.Mesh(headgeo, this.charMaterial);
+	headmesh.position.y = 2;
+	this.UVMap(headmesh, 0, 8, 8, 8, 8);
+	this.UVMap(headmesh, 1, 24, 8, 8, 8);
+	
+	this.UVMap(headmesh, 2, 8, 0, 8, 8, 1);
+	this.UVMap(headmesh, 3, 16, 0, 8, 8, 3);
+	
+	this.UVMap(headmesh, 4, 0, 8, 8, 8);
+	this.UVMap(headmesh, 5, 16, 8, 8, 8);
+	headgroup.add(headmesh);
+
+	var helmet = this.cubeFromPlanes(9, this.charMaterialTrans);
+	helmet.position.y = 2;
+	this.UVMap(helmet.children[0], 0, 32+8, 8, 8, 8);
+	this.UVMap(helmet.children[1], 0, 32+24, 8, 8, 8);
+	this.UVMap(helmet.children[2], 0, 32+8, 0, 8, 8, 1);
+	this.UVMap(helmet.children[3], 0, 32+16, 0, 8, 8, 3);
+	this.UVMap(helmet.children[4], 0, 32+0, 8, 8, 8);
+	this.UVMap(helmet.children[5], 0, 32+16, 8, 8, 8);
+	
+	headgroup.add(helmet);
+	
+	var ears = new THREE.Object3D();
+	
+	var eargeo = new THREE.CubeGeometry(1, (9/8)*6, (9/8)*6);
+	var leftear = new THREE.Mesh(eargeo, this.charMaterial);
+	var rightear = new THREE.Mesh(eargeo, this.charMaterial);
+	
+	leftear.position.y = 2+(9/8)*5;
+	rightear.position.y = 2+(9/8)*5;
+	leftear.position.z = -(9/8)*5;
+	rightear.position.z = (9/8)*5;
+	
+	// Right ear share same geometry, same uv-maps
+	
+	this.UVMap(leftear, 0, 25, 1, 6, 6); // Front side
+	this.UVMap(leftear, 1, 32, 1, 6, 6); // Back side
+	
+	this.UVMap(leftear, 2, 25, 0, 6, 1, 1); // Top edge
+	this.UVMap(leftear, 3, 31, 0, 6, 1, 1); // Bottom edge
+	
+	this.UVMap(leftear, 4, 24, 1, 1, 6); // Left edge
+	this.UVMap(leftear, 5, 31, 1, 1, 6); // Right edge
+	
+	ears.add(leftear);
+	ears.add(rightear);
+	
+	leftear.visible = rightear.visible = false;
+	
+	headgroup.add(ears);
+	headgroup.position.y = 8;
+	upperbody.add(headgroup)
+	
+	var playerModel = this.playerModel = new THREE.Object3D();
+	
+	playerModel.add(leftleg);
+	playerModel.add(rightleg);
+	playerModel.add(upperbody);
+	
+	var playerGroup = this.playerGroup = new THREE.Object3D();
+	
+	playerGroup.add(playerModel);
+	
+	var playerRotation = new THREE.Object3D();
+	playerRotation.rotation.y = Math.PI / 2
+	playerRotation.position.y = 12
+	playerRotation.add(playerModel)
+
+	var rotatedHead = new THREE.Object3D();
+	rotatedHead.rotation.y = -Math.PI / 2
+	rotatedHead.add(headgroup);
+
+	playerModel.add(rotatedHead);
+	playerModel.position.y = 6;
+
+	var playerGroup = new THREE.Object3D();
+	playerGroup.cameraInside = new THREE.Object3D()
+	playerGroup.cameraOutside = new THREE.Object3D()
+
+	playerGroup.cameraInside.position.x = 0;
+	playerGroup.cameraInside.position.y = 2;
+	playerGroup.cameraInside.position.z = 0; 
+
+	playerGroup.head = headgroup
+	headgroup.add(playerGroup.cameraInside)
+	playerGroup.cameraInside.add(playerGroup.cameraOutside)
+
+	playerGroup.cameraOutside.position.z = 100
+
+  playerGroup.add(playerRotation);
+
+	playerGroup.scale = this.scale
+	return playerGroup
+}
+},{}],27:[function(require,module,exports){module.exports = inherits
+
+function inherits (c, p, proto) {
+  proto = proto || {}
+  var e = {}
+  ;[c.prototype, proto].forEach(function (s) {
+    Object.getOwnPropertyNames(s).forEach(function (k) {
+      e[k] = Object.getOwnPropertyDescriptor(s, k)
+    })
+  })
+  c.prototype = Object.create(p.prototype, e)
+  c.super = p
+}
+
+//function Child () {
+//  Child.super.call(this)
+//  console.error([this
+//                ,this.constructor
+//                ,this.constructor === Child
+//                ,this.constructor.super === Parent
+//                ,Object.getPrototypeOf(this) === Child.prototype
+//                ,Object.getPrototypeOf(Object.getPrototypeOf(this))
+//                 === Parent.prototype
+//                ,this instanceof Child
+//                ,this instanceof Parent])
+//}
+//function Parent () {}
+//inherits(Child, Parent)
+//new Child
+
+},{}],28:[function(require,module,exports){(function(process){var THREE, temporaryPosition, temporaryVector
+
+module.exports = function(three, opts) {
+  temporaryPosition = new three.Vector3
+  temporaryVector = new three.Vector3
+  
+  return new View(three, opts)
+}
+
+function View(three, opts) {
+  THREE = three // three.js doesn't support multiple instances on a single page
+  this.fov = opts.fov || 60
+  this.width = opts.width || 512
+  this.height = opts.height || 512
+  this.aspectRatio = opts.aspectRatio || this.width/this.height
+  this.nearPlane = opts.nearPlane || 1
+  this.farPlane = opts.farPlane || 10000
+  this.skyColor = opts.skyColor || 0xBFD1E5
+  this.ortho = opts.ortho
+  this.camera = this.ortho?(new THREE.OrthographicCamera(this.width/-2, this.width/2, this.height/2, this.height/-2, this.nearPlane, this.farPlane)):(new THREE.PerspectiveCamera(this.fov, this.aspectRatio, this.nearPlane, this.farPlane))
+  this.camera.lookAt(new THREE.Vector3(0, 0, 0))
+
+  if (!process.browser) return
+
+  this.createRenderer()
+  this.element = this.renderer.domElement
+}
+
+View.prototype.createRenderer = function() {
+  this.renderer = new THREE.WebGLRenderer({
+    antialias: true
+  })
+  this.renderer.setSize(this.width, this.height)
+  this.renderer.setClearColorHex(this.skyColor, 1.0)
+  this.renderer.clear()
+}
+
+View.prototype.bindToScene = function(scene) {
+  scene.add(this.camera)
+}
+
+View.prototype.getCamera = function() {
+  return this.camera
+}
+
+View.prototype.cameraPosition = function() {
+  temporaryPosition.multiplyScalar(0)
+  this.camera.matrixWorld.multiplyVector3(temporaryPosition)
+  return temporaryPosition
+}
+
+View.prototype.cameraVector = function() {
+  temporaryVector.multiplyScalar(0)
+  temporaryVector.z = -1
+  this.camera.matrixWorld.multiplyVector3(temporaryVector)
+  temporaryVector.subSelf(this.cameraPosition()).normalize()
+  return temporaryVector
+}
+
+View.prototype.resizeWindow = function(width, height) {
+  if( this.element.parentElement ) {
+    width = this.element.parentElement.clientWidth
+    height = this.element.parentElement.clientHeight
+  }
+
+  this.camera.aspect = this.aspectRatio = width/height
+
+  this.camera.updateProjectionMatrix()
+
+  this.renderer.setSize( width, height )
+}
+
+View.prototype.render = function(scene) {
+  this.renderer.render(scene, this.camera)
+}
+
+View.prototype.appendTo = function(element) {
+  if (typeof element === 'object') {
+    element.appendChild(this.element)
+  }
+  else {
+    document.querySelector(element).appendChild(this.element)
+  }
+
+  this.resizeWindow(this.width,this.height)
+}
+})(require("__browserify_process"))
+},{"__browserify_process":16}],29:[function(require,module,exports){(function(){module.exports = raf
+
+var EE = require('events').EventEmitter
+  , global = typeof window === 'undefined' ? this : window
+
+var _raf =
+  global.requestAnimationFrame ||
+  global.webkitRequestAnimationFrame ||
+  global.mozRequestAnimationFrame ||
+  global.msRequestAnimationFrame ||
+  global.oRequestAnimationFrame ||
+  (global.setImmediate ? function(fn, el) {
+    setImmediate(fn)
+  } :
+  function(fn, el) {
+    setTimeout(fn, 0)
+  })
+
+function raf(el) {
+  var now = raf.now()
+    , ee = new EE
+
+  ee.pause = function() { ee.paused = true }
+  ee.resume = function() { ee.paused = false }
+
+  _raf(iter, el)
+
+  return ee
+
+  function iter(timestamp) {
+    var _now = raf.now()
+      , dt = _now - now
+    
+    now = _now
+
+    ee.emit('data', dt)
+
+    if(!ee.paused) {
+      _raf(iter, el)
+    }
+  }
+}
+
+raf.polyfill = _raf
+raf.now = function() { return Date.now() }
+
+})()
+},{"events":18}],30:[function(require,module,exports){module.exports = function(field, tilesize, dimensions, offset) {
+  dimensions = dimensions || [ 
+    Math.sqrt(field.length) >> 0
+  , Math.sqrt(field.length) >> 0
+  , Math.sqrt(field.length) >> 0
+  ] 
+
+  offset = offset || [
+    0
+  , 0
+  , 0
+  ]
+
+  field = typeof field === 'function' ? field : function(x, y, z) {
+    return this[x + y * dimensions[1] + (z * dimensions[1] * dimensions[2])]
+  }.bind(field) 
+
+  var coords
+
+  coords = [0, 0, 0]
+
+  return collide
+
+  function collide(box, vec, oncollision) {
+    if(vec[0] === 0 && vec[1] === 0 && vec[2] === 0) return
+
+    // collide x, then y
+    collideaxis(0)
+    collideaxis(1)
+    collideaxis(2)
+
+    function collideaxis(i_axis) {
+      var j_axis = (i_axis + 1) % 3
+        , k_axis = (i_axis + 2) % 3 
+        , posi = vec[i_axis] > 0
+        , leading = box[posi ? 'max' : 'base'][i_axis] 
+        , dir = posi ? 1 : -1
+        , i_start = Math.floor(leading / tilesize)
+        , i_end = (Math.floor((leading + vec[i_axis]) / tilesize)) + dir
+        , j_start = Math.floor(box.base[j_axis] / tilesize)
+        , j_end = Math.ceil(box.max[j_axis] / tilesize)
+        , k_start = Math.floor(box.base[k_axis] / tilesize) 
+        , k_end = Math.ceil(box.max[k_axis] / tilesize)
+        , done = false
+        , edge_vector
+        , edge
+        , tile
+
+      // loop from the current tile coord to the dest tile coord
+      //    -> loop on the opposite axis to get the other candidates
+      //      -> if `oncollision` return `true` we've hit something and
+      //         should break out of the loops entirely.
+      //         NB: `oncollision` is where the client gets the chance
+      //         to modify the `vec` in-flight.
+      // once we're done translate the box to the vec results
+
+      var step = 0
+      for(var i = i_start; !done && i !== i_end; ++step, i += dir) {
+        if(i < offset[i_axis] || i >= dimensions[i_axis]) continue
+        for(var j = j_start; !done && j !== j_end; ++j) {
+          if(j < offset[j_axis] || j >= dimensions[j_axis]) continue
+          for(var k = k_start; k !== k_end; ++k) {
+            if(k < offset[k_axis] || k >= dimensions[k_axis]) continue
+            coords[i_axis] = i
+            coords[j_axis] = j
+            coords[k_axis] = k
+            tile = field.apply(field, coords)
+
+            if(tile === undefined) continue
+
+            edge = dir > 0 ? i * tilesize : (i + 1) * tilesize
+            edge_vector = edge - leading
+
+            if(oncollision(i_axis, tile, coords, dir, edge_vector)) {
+              done = true
+              break
+            }
+          } 
+        }
+      }
+
+      coords[0] = coords[1] = coords[2] = 0
+      coords[i_axis] = vec[i_axis]
+      box.translate(coords)
+    }
+  }  
+}
+
+},{}],31:[function(require,module,exports){module.exports = pin
+
+var pins = {}
+  , stack_holder = {}
+  , pin_holder
+
+function make_pin_for(name, obj) {
+  var container = document.createElement('div')
+    , header = document.createElement('h4')
+    , body = document.createElement('pre')
+
+  container.style.background = 'white'
+  container.style.marginBottom = '4px'
+  container.appendChild(header)
+  container.appendChild(body)
+  header.textContents = header.innerText = obj && obj.repr ? obj.repr() : name
+  body.style.padding = '8px'
+
+
+  if(!pin_holder) {
+    pin_holder = document.createElement('div')
+    pin_holder.style.position = 'absolute'
+    pin_holder.style.top =
+    pin_holder.style.right = '4px'
+
+    document.body.appendChild(pin_holder)
+  }
+
+  pin_holder.appendChild(container)
+
+  return (pins[name] = pins[name] || []).push({body: body, last: -Infinity, for_object: obj}), pins[name]
+}
+
+function update_pin(item, into, retain, depth) {
+  if(!retain) into.innerHTML = ''
+  if(depth > 1) return
+  depth = depth || 0
+
+  switch(typeof item) {
+    case 'number': into.innerText += item.toFixed(3); break
+    case 'string': into.innerText += '"'+item+'"'; break
+    case 'undefined':
+    case 'object':
+      if(item) {
+        for(var key in item) if(item.hasOwnProperty(key)) {
+          into.innerText += key +':'
+          update_pin(item[key], into, true, depth+1)
+          into.innerText += '\n'
+        } 
+        break
+      }
+    case 'boolean': into.innerText += ''+item; break
+  }  
+}
+
+function pin(item, every, obj, name) {
+  if(!name) Error.captureStackTrace(stack_holder)
+  var location = name || stack_holder.stack.split('\n').slice(2)[0].replace(/^\s+at /g, '')
+    , target = pins[location] || make_pin_for(location, obj)
+    , now = Date.now()
+    , every = every || 0
+
+  if(arguments.length < 3) target = target[0]
+  else {
+    for(var i = 0, len = target.length; i < len; ++i) {
+    if(target[i].for_object === obj) {
+      target = target[i]
+      break   
+    }
+  }
+    if(i === len) {
+      pins[location].push(target = make_pin_for(location, obj))
+    }
+  }
+
+  if(now - target.last > every) {
+    update_pin(item, target.body)
+    target.last = now 
+  }
+}
+
+},{}],6:[function(require,module,exports){(function(process){var voxel = require('voxel')
+var voxelMesh = require('voxel-mesh')
+var voxelChunks = require('voxel-chunks')
+var ray = require('voxel-raycast')
+var texture = require('voxel-texture')
+var control = require('voxel-control')
+var voxelView = require('voxel-view')
+var THREE = require('three')
+var Stats = require('./lib/stats')
+var Detector = require('./lib/detector')
+var inherits = require('inherits')
+var path = require('path')
+var EventEmitter = require('events').EventEmitter
+if (process.browser) var interact = require('interact')
+var requestAnimationFrame = require('raf')
+var collisions = require('collide-3d-tilemap')
+var aabb = require('aabb-3d')
+var glMatrix = require('gl-matrix')
+var vector = glMatrix.vec3
+var SpatialEventEmitter = require('spatial-events')
+var regionChange = require('voxel-region-change')
+var kb = require('kb-controls')
+var physical = require('voxel-physical')
+var pin = require('pin-it')
+
+module.exports = Game
+
+function Game(opts) {
+  if (!(this instanceof Game)) return new Game(opts)
+  var self = this
+  if (!opts) opts = {}
+  if (process.browser && this.notCapable()) return
+  
+  if (!('generateChunks' in opts)) opts.generateChunks = true
+  this.generateChunks = opts.generateChunks
+  this.setConfigurablePositions(opts)
+  this.configureChunkLoading(opts)
+  this.THREE = THREE
+  this.vector = vector
+  this.glMatrix = glMatrix
+
+  this.cubeSize = 1 // backwards compat
+  this.chunkSize = opts.chunkSize || 32
+  
+  // chunkDistance and removeDistance should not be set to the same thing
+  // as it causes lag when you go back and forth on a chunk boundary
+  this.chunkDistance = opts.chunkDistance || 2
+  this.removeDistance = opts.removeDistance || this.chunkDistance + 1
+  
+  this.playerHeight = opts.playerHeight || 1.62
+  this.meshType = opts.meshType || 'surfaceMesh'
+  this.mesher = opts.mesher || voxel.meshers.greedy
+  this.materialType = opts.materialType || THREE.MeshLambertMaterial
+  this.materialParams = opts.materialParams || {}
+  this.items = []
+  this.voxels = voxel(this)
+  this.chunkGroups = voxelChunks(this)
+  this.height = typeof window === "undefined" ? 1 : window.innerHeight
+  this.width = typeof window === "undefined" ? 1 : window.innerWidth
+  this.scene = new THREE.Scene()
+  this.view = opts.view || new voxelView(THREE, { width: this.width, height: this.height })
+  this.view.bindToScene(this.scene)
+  this.camera = this.view.getCamera()
+  if (!opts.lightsDisabled) this.addLights(this.scene)
+  
+  this.collideVoxels = collisions(
+    this.getBlock.bind(this),
+    1,
+    [Infinity, Infinity, Infinity],
+    [-Infinity, -Infinity, -Infinity]
+  )
+  
+  this.timer = this.initializeTimer((opts.tickFPS || 16))
+  this.paused = false
+
+  this.spatial = new SpatialEventEmitter
+  this.region = regionChange(this.spatial, aabb([0, 0, 0], [1, 1, 1]), this.chunkSize)
+  this.voxelRegion = regionChange(this.spatial, 1)
+  this.chunkRegion = regionChange(this.spatial, this.chunkSize)
+
+  // contains chunks that has had an update this tick. Will be generated right before redrawing the frame
+  this.chunksNeedsUpdate = {}
+
+  this.materials = texture({
+    THREE: THREE,
+    texturePath: opts.texturePath || './textures/',
+    materialType: opts.materialType || THREE.MeshLambertMaterial,
+    materialParams: opts.materialParams || {}
+  })
+
+  this.materialNames = opts.materials || [['grass', 'dirt', 'grass_dirt'], 'brick', 'dirt']
+  
+  self.chunkRegion.on('change', function(newChunk) {
+    self.removeFarChunks()
+  })
+
+  if (process.browser) this.materials.load(this.materialNames)
+
+  if (this.generateChunks) this.handleChunkGeneration()
+
+  // client side only after this point
+  if (!process.browser) return
+  
+  this.paused = true
+  this.initializeRendering()
+  
+  for (var chunkIndex in this.voxels.chunks) this.showChunk(this.voxels.chunks[chunkIndex])
+
+  this.initializeControls(opts)
+}
+
+inherits(Game, EventEmitter)
+
+// # External API
+
+Game.prototype.cameraPosition = function() {
+  var pos = this.view.cameraPosition()
+  return [pos.x, pos.y, pos.z]
+}
+
+Game.prototype.cameraVector = function() {
+  var pos = this.view.cameraVector()
+  return [pos.x, pos.y, pos.z]
+}
+
+Game.prototype.makePhysical = function(target, envelope, blocksCreation) {
+  var obj = physical(target, this.potentialCollisionSet(), envelope || [1/2, 1.5, 1/2])
+  obj.blocksCreation = !!blocksCreation
+  return obj
+}
+
+Game.prototype.addItem = function(item) {
+  if (!item.tick) {
+    var newItem = physical(
+      item.mesh,
+      this.potentialCollisionSet(),
+      [item.size, item.size, item.size]
+    )
+    
+    if (item.velocity) {
+      newItem.velocity.copy(item.velocity)
+      newItem.subjectTo(this.gravity)
+    }
+    
+    newItem.repr = function() { return 'debris' }
+    newItem.mesh = item.mesh
+    newItem.blocksCreation = item.blocksCreation
+    
+    item = newItem
+  }
+  
+  this.items.push(item)
+  if (item.mesh) this.scene.add(item.mesh)
+}
+
+Game.prototype.removeItem = function(item) {
+  var ix = this.items.indexOf(item)
+  if (ix < 0) return
+  this.items.splice(ix, 1)
+  if (item.mesh) this.scene.remove(item.mesh)
+}
+
+// only intersects voxels, not items
+Game.prototype.raycast = // backwards compat
+Game.prototype.raycastVoxels = function(start, direction, maxDistance) {
+  if (!start) return this.raycast(this.cameraPosition(), this.cameraVector(), 10)
+  
+  var hitNormal = new Array(3)
+  var hitPosition = new Array(3)
+  var cp = start || this.cameraPosition()
+  var cv = direction || this.cameraVector()
+  var hitBlock = ray(this, cp, cv, maxDistance || 10.0, hitPosition, hitNormal)
+  if (hitBlock === -1) return false
+  
+  return {
+    position: hitPosition,
+    direction: direction,
+    value: hitBlock,
+    normal: hitNormal
+  }
+}
+
+Game.prototype.checkBlock = function(pos) {
+  pos = this.parseVectorArguments(arguments)
+  var floored = pos.map(function(i) { return Math.floor(i) })
+  var bbox
+  
+  bbox = aabb(floored, [1, 1, 1])
+  
+  for (var i = 0, len = this.items.length; i < len; ++i) {
+    var item = this.items[i]
+    var itemInTheWay = item.blocksCreation && item.aabb && bbox.intersects(item.aabb())
+    if (itemInTheWay) return
+  }
+  
+  var chunkKeyArr = this.voxels.chunkAtPosition(pos)
+  var chunkIndex = chunkKeyArr.join('|')
+  var chunk = this.voxels.chunks[chunkIndex]
+  
+  if (!chunk) return
+  
+  var chunkPosition = this.chunkToWorld(chunk.position)
+  var voxelPosition = []
+  vector.subtract(voxelPosition, floored, chunkPosition)
+  
+  return {chunkIndex: chunkIndex, voxelVector: voxelPosition}
+}
+
+Game.prototype.createBlock = function(pos, val) {
+  if (pos.chunkMatrix) return this.chunkGroups.createBlock(pos, val)
+  var newBlock = this.checkBlock(pos)
+  if (!newBlock) return
+  var chunk = this.voxels.chunks[newBlock.chunkIndex]
+  var old = chunk.voxels[this.voxels.voxelIndex(newBlock.voxelVector)]
+  chunk.voxels[this.voxels.voxelIndex(newBlock.voxelVector)] = val
+  this.addChunkToNextUpdate(chunk)
+  this.spatial.emit('change-block', pos, old, val)
+  return true
+}
+
+Game.prototype.setBlock = function(pos, val) {
+  if (pos.chunkMatrix) return this.chunkGroups.setBlock(pos, val)
+  var hitVoxel = this.voxels.voxelAtPosition(pos, val)
+  var c = this.voxels.chunkAtPosition(pos)
+  this.addChunkToNextUpdate(this.voxels.chunks[c.join('|')])
+  this.spatial.emit('change-block', pos, hitVoxel, val)
+}
+
+Game.prototype.getBlock = function(pos) {
+  pos = this.parseVectorArguments(arguments)
+  if (pos.chunkMatrix) return this.chunkGroups.getBlock(pos)
+  return this.voxels.voxelAtPosition(pos)
+}
+
+Game.prototype.createAdjacent = function(hit, val) {
+  vector.add(hit.position, hit.position, hit.normal)
+  this.createBlock(hit.position, val)
+}
+
+Game.prototype.appendTo = function (element) {
+  this.view.appendTo(element)
+}
+
+// # Defaults/options parsing
+
+Game.prototype.gravity = [0, -0.0000036, 0]
+
+Game.prototype.defaultButtons = {
+  'W': 'forward'
+, 'A': 'left'
+, 'S': 'backward'
+, 'D': 'right'
+, '<mouse 1>': 'fire'
+, '<mouse 2>': 'firealt'
+, '<space>': 'jump'
+, '<control>': 'alt'
+}
+
+// used in methods that have identity function(pos) {}
+Game.prototype.parseVectorArguments = function(args) {
+  if (!args) return false
+  if (args[0] instanceof Array) return args[0]
+  return [args[0], args[1], args[2]]
+}
+
+Game.prototype.setConfigurablePositions = function(opts) {
+  var sp = opts.startingPosition
+  this.startingPosition = sp || [35, 1024, 35]
+  var wo = opts.worldOrigin
+  this.worldOrigin = wo || [0, 0, 0]
+}
+
+Game.prototype.notCapable = function() {
+  if( !Detector().webgl ) {
+    var wrapper = document.createElement('div')
+    wrapper.className = "errorMessage"
+    var a = document.createElement('a')
+    a.title = "You need WebGL and Pointer Lock (Chrome 23/Firefox 14) to play this game. Click here for more information."
+    a.innerHTML = a.title
+    a.href = "http://get.webgl.org"
+    wrapper.appendChild(a)
+    this.view.element = wrapper
+    return true
+  }
+  return false
+}
+
+Game.prototype.onWindowResize = function() {
+  this.view.resizeWindow(window.innerWidth, window.innerHeight)
+}
+
+// # Physics/collision related methods
+
+Game.prototype.control = function(target) {
+  this.controlling = target
+  return this.controls.target(target)
+}
+
+Game.prototype.potentialCollisionSet = function() {
+  return [{ collide: this.collideTerrain.bind(this) }]
+}
+
+Game.prototype.playerPosition = function() {
+  var target = this.controls.target()
+  if (!target) return false
+  var position = target.avatar.position
+  return [position.x, position.y, position.z]
+}
+
+Game.prototype.playerAABB = function(position) {
+  var pos = position || this.playerPosition()
+  var lower = []
+  var upper = [1/2, this.playerHeight, 1/2]
+  var playerBottom = [1/4, this.playerHeight, 1/4]
+  vector.subtract(lower, pos, playerBottom)
+  var bbox = aabb(lower, upper)
+  return bbox
+}
+
+Game.prototype.collideTerrain = function(other, bbox, vec, resting) {
+  var axes = ['x', 'y', 'z']
+  var vec3 = [vec.x, vec.y, vec.z]
+  this.collideVoxels(bbox, vec3, function hit(axis, tile, coords, dir, edge) {
+    if (!tile) return
+    if (Math.abs(vec3[axis]) < Math.abs(edge)) return
+    vec3[axis] = vec[axes[axis]] = edge
+    other.acceleration[axes[axis]] = 0
+    resting[axes[axis]] = dir
+    other.friction[axes[(axis + 1) % 3]] = other.friction[axes[(axis + 2) % 3]] = axis === 1 ? 0.5 : 1
+    return true
+  })
+}
+
+// # Three.js specific methods
+
+Game.prototype.addStats = function() {
+  stats = new Stats()
+  stats.domElement.style.position  = 'absolute'
+  stats.domElement.style.bottom  = '0px'
+  document.body.appendChild( stats.domElement )
+}
+
+Game.prototype.addLights = function(scene) {
+  var ambientLight, directionalLight
+  ambientLight = new THREE.AmbientLight(0xcccccc)
+  scene.add(ambientLight)
+  var light	= new THREE.DirectionalLight( 0xffffff , 1)
+  light.position.set( 1, 1, 0.5 ).normalize()
+  scene.add( light )
+}
+
+// # Chunk related methods
+
+Game.prototype.configureChunkLoading = function(opts) {
+  var self = this
+  if (!opts.generateChunks) return
+  if (!opts.generate) {
+    this.generate = function(x,y,z) {
+      return x*x+y*y+z*z <= 15*15 ? 1 : 0 // sphere world
+    }
+  } else {
+    this.generate = opts.generate
+  }
+  if (opts.generateVoxelChunk) {
+    this.generateVoxelChunk = opts.generateVoxelChunk
+  } else {
+    this.generateVoxelChunk = function(low, high) {
+      return voxel.generate(low, high, self.generate, self)
+    }
+  }
+}
+
+Game.prototype.worldWidth = function() {
+  return this.chunkSize * 2 * this.chunkDistance
+}
+
+Game.prototype.chunkToWorld = function(pos) {
+  return [
+    pos[0] * this.chunkSize,
+    pos[1] * this.chunkSize,
+    pos[2] * this.chunkSize
+  ]
+}
+
+Game.prototype.removeFarChunks = function(playerPosition) {
+  var self = this
+  playerPosition = playerPosition || this.playerPosition()
+  var nearbyChunks = this.voxels.nearbyChunks(playerPosition, this.removeDistance).map(function(chunkPos) {
+    return chunkPos.join('|')
+  })
+  Object.keys(self.voxels.chunks).map(function(chunkIndex) {
+    if (nearbyChunks.indexOf(chunkIndex) > -1) return
+    var chunk = self.voxels.meshes[chunkIndex]
+    
+    if (!chunk) return
+    
+    self.scene.remove(chunk[self.meshType])
+    chunk[self.meshType].geometry.dispose()
+
+    delete chunk.data
+    delete chunk.geometry
+    delete chunk.meshed
+    delete chunk.surfaceMesh
+    delete self.voxels.chunks[chunkIndex]
+  })
+  self.voxels.requestMissingChunks(playerPosition)
+}
+
+Game.prototype.addChunkToNextUpdate = function(chunk) {
+  this.chunksNeedsUpdate[chunk.position.join('|')] = chunk
+}
+
+Game.prototype.updateDirtyChunks = function() {
+  var self = this
+  Object.keys(this.chunksNeedsUpdate).forEach(function showChunkAtIndex(chunkIndex) {
+    var chunk = self.chunksNeedsUpdate[chunkIndex]
+    self.showChunk(chunk)
+  })
+  this.chunksNeedsUpdate = {}
+}
+
+Game.prototype.getChunkAtPosition = function(pos) {
+  var chunkID = this.voxels.chunkAtPosition(pos).join('|')
+  var chunk = this.voxels.chunks[chunkID]
+  return chunk
+}
+
+Game.prototype.showChunk = function(chunk) {
+  var chunkIndex = chunk.position.join('|')
+  var bounds = this.voxels.getBounds.apply(this.voxels, chunk.position)
+  var scale = new THREE.Vector3(1, 1, 1)
+  var mesh = voxelMesh(chunk, this.mesher, scale)
+  this.voxels.chunks[chunkIndex] = chunk
+  if (this.voxels.meshes[chunkIndex]) this.scene.remove(this.voxels.meshes[chunkIndex][this.meshType])
+  this.voxels.meshes[chunkIndex] = mesh
+  if (process.browser) {
+    if (this.meshType === 'wireMesh') mesh.createWireMesh()
+    else mesh.createSurfaceMesh(new THREE.MeshFaceMaterial(this.materials.get()))
+    this.materials.paint(mesh.geometry)
+  }
+  mesh.setPosition(bounds[0][0], bounds[0][1], bounds[0][2])
+  mesh.addToScene(this.scene)
+  return mesh
+}
+
+// # Debugging methods
+
+Game.prototype.addMarker = function(position) {
+  var geometry = new THREE.SphereGeometry( 0.5, 10, 10 )
+  var material = new THREE.MeshPhongMaterial( { color: 0xffffff, shading: THREE.FlatShading } )
+  var mesh = new THREE.Mesh( geometry, material )
+  mesh.position.copy(position)
+  this.scene.add(mesh)
+}
+
+Game.prototype.addAABBMarker = function(aabb, color) {
+  var geometry = new THREE.CubeGeometry(aabb.width(), aabb.height(), aabb.depth())
+  var material = new THREE.MeshBasicMaterial({ color: color || 0xffffff, wireframe: true, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+  var mesh = new THREE.Mesh(geometry, material)
+  mesh.position.set(aabb.x0() + aabb.width() / 2, aabb.y0() + aabb.height() / 2, aabb.z0() + aabb.depth() / 2)
+  this.scene.add(mesh)
+  return mesh
+}
+
+Game.prototype.addVoxelMarker = function(x, y, z, color) {
+  var bbox = aabb([x, y, z], [1, 1, 1])
+  return this.addAABBMarker(bbox, color)
+}
+
+Game.prototype.pin = pin
+
+// # Misc internal methods
+
+Game.prototype.onControlChange = function(gained, stream) {
+  this.paused = false
+
+  if (!gained && !this.optout) {
+    this.buttons.disable()
+    return
+  }
+
+  this.buttons.enable()
+  stream.pipe(this.controls.createWriteRotationStream())
+}
+
+Game.prototype.onControlOptOut = function() {
+  this.optout = true
+}
+
+Game.prototype.onFire = function(state) {
+  this.emit('fire', this.controlling, state)
+}
+
+Game.prototype.tick = function(delta) {
+  for(var i = 0, len = this.items.length; i < len; ++i) {
+    this.items[i].tick(delta)
+  }
+  
+  if (this.materials) this.materials.tick()
+  
+  if (Object.keys(this.chunksNeedsUpdate).length > 0) this.updateDirtyChunks()
+  
+  this.emit('tick', delta)
+  
+  if (!this.controls) return
+  var playerPos = this.playerPosition()
+  this.spatial.emit('position', playerPos, playerPos)
+}
+
+Game.prototype.render = function(delta) {
+  this.view.render(this.scene)
+}
+
+Game.prototype.initializeTimer = function(rate) {
+  var self = this
+  var accum = 0
+  var now = 0
+  var last = null
+  var dt = 0
+  var wholeTick
+  
+  self.frameUpdated = true
+  self.interval = setInterval(timer, 0)
+  return self.interval
+  
+  function timer() {
+    if (self.paused) {
+      last = Date.now()
+      accum = 0
+      return
+    }
+    now = Date.now()
+    dt = now - (last || now)
+    last = now
+    accum += dt
+    if (accum < rate) return
+    wholeTick = ((accum / rate)|0)
+    if (wholeTick <= 0) return
+    
+    wholeTick *= rate
+    
+    self.tick(wholeTick)
+    accum -= wholeTick
+    
+    self.frameUpdated = true
+  }
+}
+
+Game.prototype.initializeRendering = function() {
+  var self = this
+
+  if (!self.statsDisabled) self.addStats()
+
+  window.addEventListener('resize', self.onWindowResize.bind(self), false)
+
+  requestAnimationFrame(window).on('data', function(dt) {
+    self.render(dt)
+    stats.update()
+  })
+}
+
+Game.prototype.initializeControls = function(opts) {
+  // player control
+  this.buttons = kb(document.body, opts.keybindings || this.defaultButtons)
+  this.buttons.disable()
+  this.optout = false
+  this.interact = interact(this.view.element)
+  this.interact
+      .on('attain', this.onControlChange.bind(this, true))
+      .on('release', this.onControlChange.bind(this, false))
+      .on('opt-out', this.onControlOptOut.bind(this))
+  this.hookupControls(this.buttons, opts)
+}
+
+Game.prototype.hookupControls = function(buttons, opts) {
+  opts = opts || {}
+  opts.controls = opts.controls || {}
+  opts.controls.onfire = this.onFire.bind(this)
+  this.controls = control(buttons, opts.controls)
+  this.items.push(this.controls)
+  this.controlling = null
+}
+
+Game.prototype.handleChunkGeneration = function() {
+  var self = this
+  this.voxels.on('missingChunk', function(chunkPos) {
+    var chunk = self.voxels.generateChunk(chunkPos[0], chunkPos[1], chunkPos[2])
+    if (process.browser) self.showChunk(chunk)
+  })
+  this.voxels.requestMissingChunks(this.worldOrigin)
+}
+
+// teardown methods
+Game.prototype.destroy = function() {
+  clearInterval(this.timer)
+}
+})(require("__browserify_process"))
+},{"path":17,"events":18,"./lib/stats":19,"./lib/detector":21,"voxel-mesh":32,"voxel-chunks":33,"three":34,"inherits":27,"voxel-view":28,"collide-3d-tilemap":30,"aabb-3d":35,"raf":29,"spatial-events":36,"kb-controls":37,"voxel-physical":38,"pin-it":31,"voxel-control":39,"gl-matrix":40,"voxel-texture":41,"voxel-raycast":42,"voxel-region-change":43,"interact":44,"voxel":3,"__browserify_process":16}],39:[function(require,module,exports){module.exports = control
+
+var Stream = require('stream').Stream
+
+function control(control_state, opts) {
+  return new Control(control_state, opts)
+}
+
+function Control(state, opts) {
+  Stream.call(this)
+
+  opts = opts || {}
+
+  this.state = state
+  this._pitch_target = 
+  this._yaw_target =
+  this._roll_target =
+  this._target = null
+  this.speed = opts.speed || 0.0032
+  this.max_speed = opts.maxSpeed || 0.0112
+  this.jump_max_speed = opts.jumpMaxSpeed || 0.016
+  this.jump_max_timer = opts.jumpTimer || 200
+  this.jump_speed = opts.jumpSpeed || 0.004
+  this.jump_timer = this.jump_timer_max
+  this.jumping = false
+  this.acceleration = opts.accelerationCurve || this.acceleration
+
+  this.fire_rate = opts.fireRate || 0
+  this.needs_discrete_fire = opts.discreteFire || false
+  this.onfire = opts.onfire || this.onfire
+  this.firing = 0
+
+  this.x_rotation_per_ms = opts.rotationXMax || opts.rotationMax || 33
+  this.y_rotation_per_ms = opts.rotationYMax || opts.rotationMax || 33
+  this.z_rotation_per_ms = opts.rotationZMax || opts.rotationMax || 33
+
+  this.x_rotation_clamp = opts.rotationXClamp || Math.PI / 2
+  this.y_rotation_clamp = opts.rotationYClamp || Infinity
+  this.z_rotation_clamp = opts.rotationZClamp || 0
+
+  this.rotation_scale = opts.rotationScale || 0.002
+
+  this.air_control = 'airControl' in opts ? opts.airControl : true
+
+  this.state.x_rotation_accum =
+  this.state.y_rotation_accum = 
+  this.state.z_rotation_accum = 0.0
+
+  this.accel_max_timer = opts.accelTimer || 200
+  this.x_accel_timer = this.accel_max_timer+0
+  this.z_accel_timer = this.accel_max_timer+0
+
+  this.readable =
+  this.writable = true
+
+  this.buffer = []
+  this.paused = false
+}
+
+var cons = Control
+  , proto = cons.prototype = new Stream
+
+proto.constructor = cons
+
+var max = Math.max
+  , min = Math.min
+  , sin = Math.sin
+  , abs = Math.abs
+  , floor = Math.floor
+  , PI = Math.PI
+
+proto.tick = function(dt) {
+  if(!this._target) {
+    return
+  }
+  var state = this.state
+    , target = this._target
+    , speed = this.speed
+    , jump_speed = this.jump_speed
+    , okay_z = abs(target.velocity.z) < this.max_speed
+    , okay_x = abs(target.velocity.x) < this.max_speed
+    , at_rest = target.atRestY()
+
+  if(!this._target) return
+
+  if(state.forward || state.backward) {
+    this.z_accel_timer = max(0, this.z_accel_timer - dt)
+  }
+  if(state.backward) {
+    if(target.velocity.z < this.max_speed)
+      target.velocity.z = max(min(this.max_speed, speed * dt * this.acceleration(this.z_accel_timer, this.accel_max_timer)), target.velocity.z)
+  } else if(state.forward) {
+    if(target.velocity.z > -this.max_speed)
+      target.velocity.z = min(max(-this.max_speed, -speed * dt * this.acceleration(this.z_accel_timer, this.accel_max_timer)), target.velocity.z)
+  } else {
+    this.z_accel_timer = this.accel_max_timer
+
+  }
+ 
+
+  if(state.left || state.right) {
+    this.x_accel_timer = max(0, this.x_accel_timer - dt)
+  }
+
+  if(state.right) {
+    if(target.velocity.x < this.max_speed)
+      target.velocity.x = max(min(this.max_speed, speed * dt * this.acceleration(this.x_accel_timer, this.accel_max_timer)), target.velocity.x)
+  } else if(state.left) {
+    if(target.velocity.x > -this.max_speed)
+      target.velocity.x = min(max(-this.max_speed, -speed * dt * this.acceleration(this.x_accel_timer, this.accel_max_timer)), target.velocity.x)
+  } else {
+    this.x_accel_timer = this.accel_max_timer
+  }
+
+  if(state.jump) {
+    if(!this.jumping && !at_rest) {
+      // we're falling, we can't jump
+    } else if(at_rest > 0) {
+      // we hit our head
+      this.jumping = false
+    } else {
+      this.jumping = true
+      if(this.jump_timer > 0) {
+        target.velocity.y = min(target.velocity.y + jump_speed * min(dt, this.jump_timer), this.jump_max_speed)
+      }
+      this.jump_timer = max(this.jump_timer - dt, 0)
+    }
+  } else {
+    this.jumping = false
+  }
+  this.jump_timer = at_rest < 0 ? this.jump_max_timer : this.jump_timer
+
+  var can_fire = true
+
+  if(state.fire || state.firealt) {
+    if(this.firing && this.needs_discrete_fire) {
+      this.firing += dt
+    } else {
+      if(!this.fire_rate || floor(this.firing / this.fire_rate) !== floor((this.firing + dt) / this.fire_rate)) {
+        this.onfire(state)
+      }
+      this.firing += dt
+    }
+  } else {
+    this.firing = 0
+  }
+
+  var x_rotation = this.state.x_rotation_accum * this.rotation_scale
+    , y_rotation = this.state.y_rotation_accum * this.rotation_scale
+    , z_rotation = this.state.z_rotation_accum * this.rotation_scale
+    , pitch_target = this._pitch_target
+    , yaw_target = this._yaw_target
+    , roll_target = this._roll_target
+
+  pitch_target.rotation.x = clamp(pitch_target.rotation.x + clamp(x_rotation, this.x_rotation_per_ms), this.x_rotation_clamp)
+  yaw_target.rotation.y = clamp(yaw_target.rotation.y + clamp(y_rotation, this.y_rotation_per_ms), this.y_rotation_clamp)
+  roll_target.rotation.z = clamp(roll_target.rotation.z + clamp(z_rotation, this.z_rotation_per_ms), this.z_rotation_clamp)
+
+  if(this.listeners('data').length) {
+    this.emitUpdate()
+  }
+
+  this.state.x_rotation_accum =
+  this.state.y_rotation_accum =
+  this.state.z_rotation_accum = 0
+}
+
+proto.write = function(changes) {
+  for(var key in changes) {
+    this.state[key] = changes[key]
+  }
+}
+
+proto.end = function(deltas) {
+  if(deltas) {
+    this.write(deltas)
+  }
+}
+
+proto.createWriteRotationStream = function() {
+  var state = this.state
+    , stream = new Stream
+
+  state.x_rotation_accum =
+  state.y_rotation_accum =
+  state.z_rotation_accum = 0
+
+  stream.writable = true
+  stream.write = write
+  stream.end = end
+
+  return stream
+
+  function write(changes) {
+    state.x_rotation_accum -= changes.dy || 0
+    state.y_rotation_accum -= changes.dx || 0
+    state.z_rotation_accum += changes.dz || 0
+  }
+
+  function end(deltas) {
+    if(deltas) {
+      stream.write(deltas)
+    }
+  }
+}
+
+proto.emitUpdate = function() {
+  return this.queue({
+      x_rotation_accum: this.state.x_rotation_accum
+    , y_rotation_accum: this.state.y_rotation_accum
+    , z_rotation_accum: this.state.z_rotation_accum
+    , forward: this.state.forward
+    , backward: this.state.backward
+    , left: this.state.left
+    , right: this.state.right
+    , fire: this.state.fire
+    , firealt: this.state.firealt
+    , jump: this.state.jump
+  })
+}
+
+proto.drain = function() {
+  var buf = this.buffer
+    , data
+
+  while(buf.length && !this.paused) {
+    data = buf.shift()
+    if(null === data) {
+      return this.emit('end')
+    }
+    this.emit('data', data)
+  }
+}
+
+proto.resume = function() {
+  this.paused = false
+  this.drain()
+
+  if(!this.paused) {
+    this.emit('drain')
+  }
+  return this
+}
+
+proto.pause = function() {
+  if(this.paused) return
+
+  this.paused = true
+  this.emit('pause')
+  return this
+}
+
+proto.queue = function(data) {
+  this.buffer.push(data)
+  this.drain()
+  return this
+}
+
+proto.acceleration = function(current, max) {
+  // max -> 0
+  var pct = (max - current) / max
+  return sin(PI/2*pct)
+}
+
+proto.target = function(target) {
+  if(target) {
+    this._target = target
+    this._yaw_target = target.yaw || target
+    this._pitch_target = target.pitch || target
+    this._roll_target = target.roll || target
+  }
+  return this._target
+}
+
+proto.onfire = function(_) {
+
+}
+
+function clamp(value, to) {
+  return isFinite(to) ? max(min(value, to), -to) : value
+}
+
+},{"stream":45}],34:[function(require,module,exports){(function(){
 var window = window || {};
 var self = self || {};
 /**
@@ -38724,2142 +40242,172 @@ if (typeof exports !== 'undefined') {
   this['THREE'] = THREE;
 }
 
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-chunks/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-chunks/index.js",function(require,module,exports,__dirname,__filename,process,global){var voxel = require('voxel');
-var ChunkMatrix = require('./lib/chunk_matrix');
-var indexer = require('./lib/indexer');
-
-module.exports = Group;
-
-function Group (game) {
-    if (!(this instanceof Group)) return new Group(game);
-    this.meshes = [];
-    this.chunkMatricies = [];
-    this.game = game;
-    this.indexer = indexer(game);
-}
-
-Group.prototype.create = function (generate) {
-    var self = this;
-    var cm = new ChunkMatrix(self.game, generate);
-    cm.on('add', function (mesh) {
-        self.chunkMatricies[mesh.id] = cm;
-        self.meshes.push(mesh);
-    });
-    cm.on('remove', function (id) {
-        delete self.chunkMatricies[id];
-    });
-    self.chunkMatricies.push(cm);
-    return cm;
-};
- 
-Group.prototype.createBlock = function (pos, val) {
-    var self = this;
-    var T = self.game.THREE;
-    var size = self.game.cubeSize;
-    
-    var cm = pos.chunkMatrix;
-    var d = pos.direction;
-    
-    var mr = new T.Matrix4().getInverse(cm.rotationObject.matrix);
-    var mt = new T.Matrix4().getInverse(cm.translationObject.matrix);
-    var m = new T.Matrix4().multiply(mr, mt);
-    
-    
-    return (function draw (offset) {
-        var pt = new T.Vector3();
-        pt.copy(pos);
-        
-        pt.x -= d.x * offset;
-        pt.y -= d.y * offset;
-        pt.z -= d.z * offset;
-        offset += size / 8;
-        
-        var tr = m.multiplyVector3(pt);
-        var ci = self.indexer.chunk(tr);
-        var vi = self.indexer.voxel(tr);
-        
-        var value = cm.getByIndex(ci, vi);
-        if (!value) {
-            cm.setByIndex(ci, vi, 3);
-            return true;
-        }
-        else draw(offset + 0.1)
-    })(0)
-};
-
-Group.prototype.setBlock = function (pos, val) {
-    var ix = this.getIndex(pos);
-    var cm = pos.chunkMatrix;
-    return cm.setByIndex(ix.chunk, ix.voxel, val);
-};
-
-Group.prototype.getBlock = function (pos) {
-    var ix = this.getIndex(pos);
-    var cm = pos.chunkMatrix;
-    return cm.getByIndex(ix.chunk, ix.voxel);
-};
-
-Group.prototype.getIndex = function (pos) {
-    var T = this.game.THREE;
-    var cm = pos.chunkMatrix;
-    
-    var mr = new T.Matrix4().getInverse(cm.rotationObject.matrix);
-    var mt = new T.Matrix4().getInverse(cm.translationObject.matrix);
-    var m = new T.Matrix4().multiply(mt, mr);
-    
-    var tr = m.multiplyVector3(pos);
-    var ci = this.indexer.chunk(tr);
-    var vi = this.indexer.voxel(tr);
-    
-    return { chunk: ci, voxel: vi };
-};
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-chunks/lib/chunk_matrix.js",function(require,module,exports,__dirname,__filename,process,global){var voxelMesh = require('voxel-mesh');
-var voxel = require('voxel');
-
-var EventEmitter = require('events').EventEmitter;
-var inherits = require('inherits');
-
-var indexer = require('./indexer');
-
-module.exports = ChunkMatrix;
-inherits(ChunkMatrix, EventEmitter);
-
-function ChunkMatrix (game, generator) {
-    var T = game.THREE;
-    var size = game.cubeSize;
-    
-    var r = this.rotationObject = new T.Object3D;
-    var t = this.translationObject = new T.Object3D;
-    var inner = new T.Object3D;
-    
-    inner.add(r);
-    t.add(inner);
-    game.scene.add(t);
-    
-    inner.position.x = size / 2;
-    inner.position.z = size / 2;
-    
-    this.generator = generator || function (x,y,z) { return 0 };
-    this.rotation = r.rotation;
-    this.position = t.position;
-    this.chunks = {};
-    this.meshes = {};
-    this.game = game;
-    this.indexer = indexer(game);
-    
-    this._update('0|0|0');
-}
-
-ChunkMatrix.prototype.generateChunk = function (ckey) {
-    if (Array.isArray(ckey)) ckey = ckey.join('|');
-    var xyz = ckey.split('|');
-    
-    var d = this.game.chunkSize;
-    var low = [ xyz[0]*d, xyz[1]*d, xyz[2]*d ];
-    var high = [ low[0]+d, low[1]+d, low[2]+d ];
-    
-    var chunk = voxel.generate(low, high, this.generator);
-    this.chunks[ckey] = chunk;
-    return chunk;
-};
-
-ChunkMatrix.prototype.setBlock = function (pos, value) {
-    var ci = this.indexer.chunk(pos);
-    var vi = this.indexer.voxel(pos);
-    return this.setByIndex(ci, vi, value);
-};
-
-ChunkMatrix.prototype.getBlock = function (pos) {
-    var ci = this.indexer.chunk(pos);
-    var vi = this.indexer.voxel(pos);
-    return this.getByIndex(ci, vi);
-};
-
-ChunkMatrix.prototype.setByIndex = function (ci, vi, value) {
-    var ckey = typeof ci === 'object' ? ci.join('|') : ci
-    if (!this.chunks[ckey]) this.generateChunk(ckey);
-    this.chunks[ckey].voxels[vi] = value;
-    this._update(ckey);
-};
-
-ChunkMatrix.prototype.getByIndex = function (ci, vi) {
-    var ckey = typeof ci === 'object' ? ci.join('|') : ci;
-    if (!this.chunks[ckey]) return undefined;
-    return this.chunks[ckey].voxels[vi];
-};
-    
-ChunkMatrix.prototype._update = function (ci) {
-    var game = this.game;
-    var T = game.THREE;
-    var size = game.cubeSize;
-    var csize = size * game.chunkSize;
-    var scale = new T.Vector3(size, size, size);
-    
-    var ckey = typeof ci === 'object' ? ci.join('|') : ci;
-    var chunk = this.chunks[ckey];
-    if (!chunk) return;
-    
-    var mesh = voxelMesh(chunk, voxel.meshers.greedy, scale);
-    
-    if (this.meshes[ckey]) {
-        var s = this.meshes[ckey].surfaceMesh || this.meshes[ckey].wireMesh;
-        delete this.meshes[s.id];
-        this.emit('remove', s);
-        this.rotationObject.remove(s);
-    }
-    this.meshes[ckey] = mesh;
-    
-    if (game.meshType === 'wireMesh') {
-        mesh.createWireMesh();
-    }
-    else {
-        mesh.createSurfaceMesh(game.material);
-    }
-    
-    var surface = mesh.surfaceMesh || mesh.wireMesh;
-    surface.position.x = -size / 2;
-    surface.position.z = -size / 2;
-    
-    var xyz = ckey.split('|');
-    surface.position.x += xyz[0] * csize;
-    surface.position.y += xyz[1] * csize;
-    surface.position.z += xyz[2] * csize;
-    
-    this.rotationObject.add(surface);
-    
-    game.applyTextures(mesh.geometry);
-    
-    this.emit('add', surface, this);
-    this.emit('update', chunk, ckey);
-};
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/inherits/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./inherits.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/inherits/inherits.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = inherits
-
-function inherits (c, p, proto) {
-  proto = proto || {}
-  var e = {}
-  ;[c.prototype, proto].forEach(function (s) {
-    Object.getOwnPropertyNames(s).forEach(function (k) {
-      e[k] = Object.getOwnPropertyDescriptor(s, k)
-    })
-  })
-  c.prototype = Object.create(p.prototype, e)
-  c.super = p
-}
-
-//function Child () {
-//  Child.super.call(this)
-//  console.error([this
-//                ,this.constructor
-//                ,this.constructor === Child
-//                ,this.constructor.super === Parent
-//                ,Object.getPrototypeOf(this) === Child.prototype
-//                ,Object.getPrototypeOf(Object.getPrototypeOf(this))
-//                 === Parent.prototype
-//                ,this instanceof Child
-//                ,this instanceof Parent])
-//}
-//function Parent () {}
-//inherits(Child, Parent)
-//new Child
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-chunks/lib/indexer.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = Indexer;
-
-function Indexer (opts) {
-    if (!(this instanceof Indexer)) return new Indexer(opts);
-    this.chunkSize = opts.chunkSize;
-    this.cubeSize = opts.cubeSize;
-}
-
-Indexer.prototype.chunk = function (pos) {
-    var chunkSize = this.chunkSize;
-    var cubeSize = this.cubeSize;
-    var cx = pos.x / cubeSize / chunkSize;
-    var cy = pos.y / cubeSize / chunkSize;
-    var cz = pos.z / cubeSize / chunkSize;
-    var ckey = [ Math.floor(cx), Math.floor(cy), Math.floor(cz) ];
-    return ckey.join('|');
-};
-
-Indexer.prototype.voxel = function (pos) {
-    var size = this.chunkSize;
-    var cubeSize = this.cubeSize;
-    var vx = (size + Math.floor(pos.x / cubeSize) % size) % size;
-    var vy = (size + Math.floor(pos.y / cubeSize) % size) % size;
-    var vz = (size + Math.floor(pos.z / cubeSize) % size) % size;
-    var x = Math.abs(vx);
-    var y = Math.abs(vy);
-    var z = Math.abs(vz);
-    return x + y*size + z*size*size;
-};
-
-});
-
-require.define("/node_modules/voxel-engine/lib/stats.js",function(require,module,exports,__dirname,__filename,process,global){/**
- * @author mrdoob / http://mrdoob.com/
- */
-
-var Stats = function () {
-
-	var startTime = Date.now(), prevTime = startTime;
-	var ms = 0, msMin = Infinity, msMax = 0;
-	var fps = 0, fpsMin = Infinity, fpsMax = 0;
-	var frames = 0, mode = 0;
-
-	var container = document.createElement( 'div' );
-	container.id = 'stats';
-	container.addEventListener( 'mousedown', function ( event ) { event.preventDefault(); setMode( ++ mode % 2 ) }, false );
-	container.style.cssText = 'width:80px;opacity:0.9;cursor:pointer';
-
-	var fpsDiv = document.createElement( 'div' );
-	fpsDiv.id = 'fps';
-	fpsDiv.style.cssText = 'padding:0 0 3px 3px;text-align:left;background-color:#002';
-	container.appendChild( fpsDiv );
-
-	var fpsText = document.createElement( 'div' );
-	fpsText.id = 'fpsText';
-	fpsText.style.cssText = 'color:#0ff;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:bold;line-height:15px';
-	fpsText.innerHTML = 'FPS';
-	fpsDiv.appendChild( fpsText );
-
-	var fpsGraph = document.createElement( 'div' );
-	fpsGraph.id = 'fpsGraph';
-	fpsGraph.style.cssText = 'position:relative;width:74px;height:30px;background-color:#0ff';
-	fpsDiv.appendChild( fpsGraph );
-
-	while ( fpsGraph.children.length < 74 ) {
-
-		var bar = document.createElement( 'span' );
-		bar.style.cssText = 'width:1px;height:30px;float:left;background-color:#113';
-		fpsGraph.appendChild( bar );
-
-	}
-
-	var msDiv = document.createElement( 'div' );
-	msDiv.id = 'ms';
-	msDiv.style.cssText = 'padding:0 0 3px 3px;text-align:left;background-color:#020;display:none';
-	container.appendChild( msDiv );
-
-	var msText = document.createElement( 'div' );
-	msText.id = 'msText';
-	msText.style.cssText = 'color:#0f0;font-family:Helvetica,Arial,sans-serif;font-size:9px;font-weight:bold;line-height:15px';
-	msText.innerHTML = 'MS';
-	msDiv.appendChild( msText );
-
-	var msGraph = document.createElement( 'div' );
-	msGraph.id = 'msGraph';
-	msGraph.style.cssText = 'position:relative;width:74px;height:30px;background-color:#0f0';
-	msDiv.appendChild( msGraph );
-
-	while ( msGraph.children.length < 74 ) {
-
-		var bar = document.createElement( 'span' );
-		bar.style.cssText = 'width:1px;height:30px;float:left;background-color:#131';
-		msGraph.appendChild( bar );
-
-	}
-
-	var setMode = function ( value ) {
-
-		mode = value;
-
-		switch ( mode ) {
-
-			case 0:
-				fpsDiv.style.display = 'block';
-				msDiv.style.display = 'none';
-				break;
-			case 1:
-				fpsDiv.style.display = 'none';
-				msDiv.style.display = 'block';
-				break;
-		}
-
-	}
-
-	var updateGraph = function ( dom, value ) {
-
-		var child = dom.appendChild( dom.firstChild );
-		child.style.height = value + 'px';
-
-	}
-
-	return {
-
-		REVISION: 11,
-
-		domElement: container,
-
-		setMode: setMode,
-
-		begin: function () {
-
-			startTime = Date.now();
-
-		},
-
-		end: function () {
-
-			var time = Date.now();
-
-			ms = time - startTime;
-			msMin = Math.min( msMin, ms );
-			msMax = Math.max( msMax, ms );
-
-			msText.textContent = ms + ' MS (' + msMin + '-' + msMax + ')';
-			updateGraph( msGraph, Math.min( 30, 30 - ( ms / 200 ) * 30 ) );
-
-			frames ++;
-
-			if ( time > prevTime + 1000 ) {
-
-				fps = Math.round( ( frames * 1000 ) / ( time - prevTime ) );
-				fpsMin = Math.min( fpsMin, fps );
-				fpsMax = Math.max( fpsMax, fps );
-
-				fpsText.textContent = fps + ' FPS (' + fpsMin + '-' + fpsMax + ')';
-				updateGraph( fpsGraph, Math.min( 30, 30 - ( fps / 100 ) * 30 ) );
-
-				prevTime = time;
-				frames = 0;
-
-			}
-
-			return time;
-
-		},
-
-		update: function () {
-
-			startTime = this.end();
-
-		}
-
-	}
-
-};
-
-module.exports = Stats
-});
-
-require.define("/node_modules/voxel-engine/lib/detector.js",function(require,module,exports,__dirname,__filename,process,global){/**
- * @author alteredq / http://alteredqualia.com/
- * @author mr.doob / http://mrdoob.com/
- */
-
-module.exports = function() {
-  return {
-  	canvas : !! window.CanvasRenderingContext2D,
-  	webgl : ( function () { try { return !! window.WebGLRenderingContext && !! document.createElement( 'canvas' ).getContext( 'experimental-webgl' ); } catch( e ) { return false; } } )(),
-  	workers : !! window.Worker,
-  	fileapi : window.File && window.FileReader && window.FileList && window.Blob,
-
-  	getWebGLErrorMessage : function () {
-
-  		var domElement = document.createElement( 'div' );
-
-  		domElement.style.fontFamily = 'monospace';
-  		domElement.style.fontSize = '13px';
-  		domElement.style.textAlign = 'center';
-  		domElement.style.background = '#eee';
-  		domElement.style.color = '#000';
-  		domElement.style.padding = '1em';
-  		domElement.style.width = '475px';
-  		domElement.style.margin = '5em auto 0';
-
-  		if ( ! this.webgl ) {
-
-  			domElement.innerHTML = window.WebGLRenderingContext ? [
-  				'Your graphics card does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation">WebGL</a>.<br />',
-  				'Find out how to get it <a href="http://get.webgl.org/">here</a>.'
-  			].join( '\n' ) : [
-  				'Your browser does not seem to support <a href="http://khronos.org/webgl/wiki/Getting_a_WebGL_Implementation">WebGL</a>.<br/>',
-  				'Find out how to get it <a href="http://get.webgl.org/">here</a>.'
-  			].join( '\n' );
-
-  		}
-
-  		return domElement;
-
-  	},
-
-  	addGetWebGLMessage : function ( parameters ) {
-
-  		var parent, id, domElement;
-
-  		parameters = parameters || {};
-
-  		parent = parameters.parent !== undefined ? parameters.parent : document.body;
-  		id = parameters.id !== undefined ? parameters.id : 'oldie';
-
-  		domElement = Detector.getWebGLErrorMessage();
-  		domElement.id = id;
-
-  		parent.appendChild( domElement );
-
-  	}
-
-  };
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/index.js",function(require,module,exports,__dirname,__filename,process,global){var lock = require('pointer-lock')
-  , drag = require('drag-stream')
-  , full = require('fullscreen')
-
-var EE = require('events').EventEmitter
-  , Stream = require('stream').Stream
-
-module.exports = interact
-
-function interact(el, skiplock) {
-  var ee = new EE
-    , internal
-
-  if(!lock.available() || skiplock) {
-    internal = usedrag(el)
-  } else {
-    internal = uselock(el, politelydeclined)
+})()
+},{}],42:[function(require,module,exports){"use strict";
+
+var EPSILON = 1e-6
+
+//Voxel ray marching code, ported from an old project
+function traceRay(voxels, origin, direction, max_d, hit_pos, hit_norm) {
+  var ox = origin[0]
+    , oy = origin[1]
+    , oz = origin[2]
+    , dx = direction[0]
+    , dy = direction[1]
+    , dz = direction[2]
+    , ds = Math.sqrt(dx*dx + dy*dy + dz*dz)
+    , norm_axis = 0;
+  dx /= ds;
+  dy /= ds;
+  dz /= ds;
+  if(!max_d) {
+    max_d = 64.0;
   }
 
-  ee.release = function() { internal.release && internal.release() }
-  ee.request = function() { internal.request && internal.request() }
-  ee.destroy = function() { internal.destroy && internal.destroy() }
-  ee.pointerAvailable = function() { return lock.available() }
-  ee.fullscreenAvailable = function() { return full.available() }
-
-  forward()
-
-  return ee
-
-  function politelydeclined() {
-    ee.emit('opt-out')
-    internal.destroy()
-    internal = usedrag(el)
-    forward()
-  }
-
-  function forward() {
-    internal.on('attain', function(stream) {
-      ee.emit('attain', stream)
-    })
-
-    internal.on('release', function() {
-      ee.emit('release')
-    })
-  }
-}
-
-function uselock(el, declined) {
-  var pointer = lock(el)
-    , fs = full(el)
-
-  pointer.on('needs-fullscreen', function() {
-    fs.once('attain', function() {
-      pointer.request()
-    })
-    fs.request()
-  })
-
-  pointer.on('error', declined)
-
-  return pointer
-}
-
-function usedrag(el) {
-  var ee = new EE
-    , d = drag(el)
-    , stream
-
-  d.paused = true
-
-  d.on('resume', function() {
-    stream = new Stream
-    stream.readable = true
-    stream.initial = null
-  })
-
-  d.on('data', function(datum) {
-    if(!stream) {
-      stream = new Stream
-      stream.readable = true
-      stream.initial = null
-    }
-
-    if(!stream.initial) {
-      stream.initial = {
-        x: datum.dx
-      , y: datum.dy
-      , t: datum.dt
-      }
-      return ee.emit('attain', stream)
-    }
-
-    if(stream.paused) {
-      ee.emit('release')
-      stream.emit('end')
-      stream.readable = false
-      stream.emit('close')
-      stream = null
-    }
-
-    stream.emit('data', datum)
-  })
-
-  return ee
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/pointer-lock/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/pointer-lock/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = pointer
-
-pointer.available = available
-
-var EE = require('events').EventEmitter
-  , Stream = require('stream').Stream
-
-function available() {
-  return !!shim(document.body)
-}
-
-function pointer(el) {
-  var ael = el.addEventListener || el.attachEvent
-    , rel = el.removeEventListener || el.detachEvent
-    , doc = el.ownerDocument
-    , body = doc.body
-    , rpl = shim(el) 
-    , out = {dx: 0, dy: 0, dt: 0}
-    , ee = new EE
-    , stream = null
-    , lastPageX, lastPageY
-    , needsFullscreen = false
-    , mouseDownMS
-
-  ael.call(el, 'mousedown', onmousedown, false)
-  ael.call(el, 'mouseup', onmouseup, false)
-  ael.call(body, 'mousemove', onmove, false)
-
-  var vendors = ['', 'webkit', 'moz', 'ms', 'o']
-
-  for(var i = 0, len = vendors.length; i < len; ++i) {
-    ael.call(doc, vendors[i]+'pointerlockchange', onpointerlockchange)
-    ael.call(doc, vendors[i]+'pointerlockerror', onpointerlockerror)
-  }
-
-  ee.release = release
-  ee.target = pointerlockelement
-  ee.request = onmousedown
-  ee.destroy = function() {
-    rel.call(el, 'mouseup', onmouseup, false)
-    rel.call(el, 'mousedown', onmousedown, false)
-    rel.call(el, 'mousemove', onmove, false)
-  }
-
-  if(!shim) {
-    setTimeout(function() {
-      ee.emit('error', new Error('pointer lock is not supported'))
-    }, 0)
-  }
-  return ee
-
-  function onmousedown(ev) {
-    if(pointerlockelement()) {
-      return
-    }
-    mouseDownMS = +new Date
-    rpl.call(el)
-  }
-
-  function onmouseup(ev) {
-    if(!needsFullscreen) {
-      return
-    }
-
-    ee.emit('needs-fullscreen')
-    needsFullscreen = false
-  }
-
-  function onpointerlockchange(ev) {
-    if(!pointerlockelement()) {
-      if(stream) release()
-      return
-    }
-
-    stream = new Stream
-    stream.readable = true
-    stream.initial = {x: lastPageX, y: lastPageY, t: Date.now()}
-
-    ee.emit('attain', stream)
-  }
-
-  function onpointerlockerror(ev) {
-    var dt = +(new Date) - mouseDownMS
-    if(dt < 100) {
-      // we errored immediately, we need to do fullscreen first.
-      needsFullscreen = true
-      return
-    }
-
-    if(stream) {
-      stream.emit('error', ev)
-      stream = null
-    }
-  }
-
-  function release() {
-    ee.emit('release')
-
-    if(stream) {
-      stream.emit('end')
-      stream.readable = false
-      stream.emit('close')
-      stream = null
-    }
-
-    var pel = pointerlockelement()
-    if(!pel) {
-      return
-    }
-
-    (doc.exitPointerLock ||
-    doc.mozExitPointerLock ||
-    doc.webkitExitPointerLock ||
-    doc.msExitPointerLock ||
-    doc.oExitPointerLock).call(doc)
-  }
-
-  function onmove(ev) {
-    lastPageX = ev.pageX
-    lastPageY = ev.pageY
-
-    if(!stream) return
-
-    // we're reusing a single object
-    // because I'd like to avoid piling up
-    // a ton of objects for the garbage
-    // collector.
-    out.dx =
-      ev.movementX || ev.webkitMovementX ||
-      ev.mozMovementX || ev.msMovementX ||
-      ev.oMovementX || 0
-
-    out.dy = 
-      ev.movementY || ev.webkitMovementY ||
-      ev.mozMovementY || ev.msMovementY ||
-      ev.oMovementY || 0
-
-    out.dt = Date.now() - stream.initial.t
-
-    ee.emit('data', out)
-    stream.emit('data', out)
-  }
-
-  function pointerlockelement() {
-    return 0 ||
-      doc.pointerLockElement ||
-      doc.mozPointerLockElement ||
-      doc.webkitPointerLockElement ||
-      doc.msPointerLockElement ||
-      doc.oPointerLockElement ||
-      null
-  }
-}
-
-function shim(el) {
-  return el.requestPointerLock ||
-    el.webkitRequestPointerLock ||
-    el.mozRequestPointerLock ||
-    el.msRequestPointerLock ||
-    el.oRequestPointerLock ||
-    null
-}
-
-});
-
-require.define("stream",function(require,module,exports,__dirname,__filename,process,global){var events = require('events');
-var util = require('util');
-
-function Stream() {
-  events.EventEmitter.call(this);
-}
-util.inherits(Stream, events.EventEmitter);
-module.exports = Stream;
-// Backwards-compat with node 0.4.x
-Stream.Stream = Stream;
-
-Stream.prototype.pipe = function(dest, options) {
-  var source = this;
-
-  function ondata(chunk) {
-    if (dest.writable) {
-      if (false === dest.write(chunk) && source.pause) {
-        source.pause();
-      }
-    }
-  }
-
-  source.on('data', ondata);
-
-  function ondrain() {
-    if (source.readable && source.resume) {
-      source.resume();
-    }
-  }
-
-  dest.on('drain', ondrain);
-
-  // If the 'end' option is not supplied, dest.end() will be called when
-  // source gets the 'end' or 'close' events.  Only dest.end() once, and
-  // only when all sources have ended.
-  if (!dest._isStdio && (!options || options.end !== false)) {
-    dest._pipeCount = dest._pipeCount || 0;
-    dest._pipeCount++;
-
-    source.on('end', onend);
-    source.on('close', onclose);
-  }
-
-  var didOnEnd = false;
-  function onend() {
-    if (didOnEnd) return;
-    didOnEnd = true;
-
-    dest._pipeCount--;
-
-    // remove the listeners
-    cleanup();
-
-    if (dest._pipeCount > 0) {
-      // waiting for other incoming streams to end.
-      return;
-    }
-
-    dest.end();
-  }
-
-
-  function onclose() {
-    if (didOnEnd) return;
-    didOnEnd = true;
-
-    dest._pipeCount--;
-
-    // remove the listeners
-    cleanup();
-
-    if (dest._pipeCount > 0) {
-      // waiting for other incoming streams to end.
-      return;
-    }
-
-    dest.destroy();
-  }
-
-  // don't leave dangling pipes when there are errors.
-  function onerror(er) {
-    cleanup();
-    if (this.listeners('error').length === 0) {
-      throw er; // Unhandled stream error in pipe.
-    }
-  }
-
-  source.on('error', onerror);
-  dest.on('error', onerror);
-
-  // remove all the event listeners that were added.
-  function cleanup() {
-    source.removeListener('data', ondata);
-    dest.removeListener('drain', ondrain);
-
-    source.removeListener('end', onend);
-    source.removeListener('close', onclose);
-
-    source.removeListener('error', onerror);
-    dest.removeListener('error', onerror);
-
-    source.removeListener('end', cleanup);
-    source.removeListener('close', cleanup);
-
-    dest.removeListener('end', cleanup);
-    dest.removeListener('close', cleanup);
-  }
-
-  source.on('end', cleanup);
-  source.on('close', cleanup);
-
-  dest.on('end', cleanup);
-  dest.on('close', cleanup);
-
-  dest.emit('pipe', source);
-
-  // Allow for unix-like usage: A.pipe(B).pipe(C)
-  return dest;
-};
-
-});
-
-require.define("util",function(require,module,exports,__dirname,__filename,process,global){var events = require('events');
-
-exports.isArray = isArray;
-exports.isDate = function(obj){return Object.prototype.toString.call(obj) === '[object Date]'};
-exports.isRegExp = function(obj){return Object.prototype.toString.call(obj) === '[object RegExp]'};
-
-
-exports.print = function () {};
-exports.puts = function () {};
-exports.debug = function() {};
-
-exports.inspect = function(obj, showHidden, depth, colors) {
-  var seen = [];
-
-  var stylize = function(str, styleType) {
-    // http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
-    var styles =
-        { 'bold' : [1, 22],
-          'italic' : [3, 23],
-          'underline' : [4, 24],
-          'inverse' : [7, 27],
-          'white' : [37, 39],
-          'grey' : [90, 39],
-          'black' : [30, 39],
-          'blue' : [34, 39],
-          'cyan' : [36, 39],
-          'green' : [32, 39],
-          'magenta' : [35, 39],
-          'red' : [31, 39],
-          'yellow' : [33, 39] };
-
-    var style =
-        { 'special': 'cyan',
-          'number': 'blue',
-          'boolean': 'yellow',
-          'undefined': 'grey',
-          'null': 'bold',
-          'string': 'green',
-          'date': 'magenta',
-          // "name": intentionally not styling
-          'regexp': 'red' }[styleType];
-
-    if (style) {
-      return '\033[' + styles[style][0] + 'm' + str +
-             '\033[' + styles[style][1] + 'm';
-    } else {
-      return str;
-    }
-  };
-  if (! colors) {
-    stylize = function(str, styleType) { return str; };
-  }
-
-  function format(value, recurseTimes) {
-    // Provide a hook for user-specified inspect functions.
-    // Check that value is an object with an inspect function on it
-    if (value && typeof value.inspect === 'function' &&
-        // Filter out the util module, it's inspect function is special
-        value !== exports &&
-        // Also filter out any prototype objects using the circular check.
-        !(value.constructor && value.constructor.prototype === value)) {
-      return value.inspect(recurseTimes);
-    }
-
-    // Primitive types cannot have properties
-    switch (typeof value) {
-      case 'undefined':
-        return stylize('undefined', 'undefined');
-
-      case 'string':
-        var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
-                                                 .replace(/'/g, "\\'")
-                                                 .replace(/\\"/g, '"') + '\'';
-        return stylize(simple, 'string');
-
-      case 'number':
-        return stylize('' + value, 'number');
-
-      case 'boolean':
-        return stylize('' + value, 'boolean');
-    }
-    // For some reason typeof null is "object", so special case here.
-    if (value === null) {
-      return stylize('null', 'null');
-    }
-
-    // Look up the keys of the object.
-    var visible_keys = Object_keys(value);
-    var keys = showHidden ? Object_getOwnPropertyNames(value) : visible_keys;
-
-    // Functions without properties can be shortcutted.
-    if (typeof value === 'function' && keys.length === 0) {
-      if (isRegExp(value)) {
-        return stylize('' + value, 'regexp');
-      } else {
-        var name = value.name ? ': ' + value.name : '';
-        return stylize('[Function' + name + ']', 'special');
-      }
-    }
-
-    // Dates without properties can be shortcutted
-    if (isDate(value) && keys.length === 0) {
-      return stylize(value.toUTCString(), 'date');
-    }
-
-    var base, type, braces;
-    // Determine the object type
-    if (isArray(value)) {
-      type = 'Array';
-      braces = ['[', ']'];
-    } else {
-      type = 'Object';
-      braces = ['{', '}'];
-    }
-
-    // Make functions say that they are functions
-    if (typeof value === 'function') {
-      var n = value.name ? ': ' + value.name : '';
-      base = (isRegExp(value)) ? ' ' + value : ' [Function' + n + ']';
-    } else {
-      base = '';
-    }
-
-    // Make dates with properties first say the date
-    if (isDate(value)) {
-      base = ' ' + value.toUTCString();
-    }
-
-    if (keys.length === 0) {
-      return braces[0] + base + braces[1];
-    }
-
-    if (recurseTimes < 0) {
-      if (isRegExp(value)) {
-        return stylize('' + value, 'regexp');
-      } else {
-        return stylize('[Object]', 'special');
-      }
-    }
-
-    seen.push(value);
-
-    var output = keys.map(function(key) {
-      var name, str;
-      if (value.__lookupGetter__) {
-        if (value.__lookupGetter__(key)) {
-          if (value.__lookupSetter__(key)) {
-            str = stylize('[Getter/Setter]', 'special');
+  //Step block-by-block along ray
+  var t = 0.0;
+  while(t <= max_d) {
+    var ix = Math.floor(ox)
+      , iy = Math.floor(oy)
+      , iz = Math.floor(oz)
+      , fx = ox - ix
+      , fy = oy - iy
+      , fz = oz - iz;
+    var b = voxels.getBlock(ix, iy, iz);
+    if(b != 0) {
+      if(hit_pos) {
+        hit_pos[0] = ox;
+        hit_pos[1] = oy;
+        hit_pos[2] = oz;
+        if(t > 0.0) {
+          //Check if collision intersects open interval
+          if(Math.max(fx, fy, fz) > 1.0 - 9.0 * EPSILON) {
+            hit_pos[0] -= (1.0 - EPSILON) * EPSILON * dx;
+            hit_pos[1] -= (1.0 - EPSILON) * EPSILON * dy;
+            hit_pos[2] -= (1.0 - EPSILON) * EPSILON * dz;
           } else {
-            str = stylize('[Getter]', 'special');
+            hit_pos[0] -= EPSILON * dx;
+            hit_pos[1] -= EPSILON * dy;
+            hit_pos[2] -= EPSILON * dz;
           }
+        }
+      }
+      if(hit_norm) {
+        hit_norm[0] = hit_norm[1] = hit_norm[2] = 0;
+        if(norm_axis < 0) {
+          hit_norm[-norm_axis-1] = -1;
         } else {
-          if (value.__lookupSetter__(key)) {
-            str = stylize('[Setter]', 'special');
-          }
+          hit_norm[norm_axis-1] = 1;
         }
       }
-      if (visible_keys.indexOf(key) < 0) {
-        name = '[' + key + ']';
-      }
-      if (!str) {
-        if (seen.indexOf(value[key]) < 0) {
-          if (recurseTimes === null) {
-            str = format(value[key]);
-          } else {
-            str = format(value[key], recurseTimes - 1);
-          }
-          if (str.indexOf('\n') > -1) {
-            if (isArray(value)) {
-              str = str.split('\n').map(function(line) {
-                return '  ' + line;
-              }).join('\n').substr(2);
-            } else {
-              str = '\n' + str.split('\n').map(function(line) {
-                return '   ' + line;
-              }).join('\n');
-            }
-          }
-        } else {
-          str = stylize('[Circular]', 'special');
-        }
-      }
-      if (typeof name === 'undefined') {
-        if (type === 'Array' && key.match(/^\d+$/)) {
-          return str;
-        }
-        name = JSON.stringify('' + key);
-        if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-          name = name.substr(1, name.length - 2);
-          name = stylize(name, 'name');
-        } else {
-          name = name.replace(/'/g, "\\'")
-                     .replace(/\\"/g, '"')
-                     .replace(/(^"|"$)/g, "'");
-          name = stylize(name, 'string');
-        }
-      }
-
-      return name + ': ' + str;
-    });
-
-    seen.pop();
-
-    var numLinesEst = 0;
-    var length = output.reduce(function(prev, cur) {
-      numLinesEst++;
-      if (cur.indexOf('\n') >= 0) numLinesEst++;
-      return prev + cur.length + 1;
-    }, 0);
-
-    if (length > 50) {
-      output = braces[0] +
-               (base === '' ? '' : base + '\n ') +
-               ' ' +
-               output.join(',\n  ') +
-               ' ' +
-               braces[1];
-
-    } else {
-      output = braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
+      return b;
     }
 
-    return output;
-  }
-  return format(obj, (typeof depth === 'undefined' ? 2 : depth));
-};
-
-
-function isArray(ar) {
-  return ar instanceof Array ||
-         Array.isArray(ar) ||
-         (ar && ar !== Object.prototype && isArray(ar.__proto__));
-}
-
-
-function isRegExp(re) {
-  return re instanceof RegExp ||
-    (typeof re === 'object' && Object.prototype.toString.call(re) === '[object RegExp]');
-}
-
-
-function isDate(d) {
-  if (d instanceof Date) return true;
-  if (typeof d !== 'object') return false;
-  var properties = Date.prototype && Object_getOwnPropertyNames(Date.prototype);
-  var proto = d.__proto__ && Object_getOwnPropertyNames(d.__proto__);
-  return JSON.stringify(proto) === JSON.stringify(properties);
-}
-
-function pad(n) {
-  return n < 10 ? '0' + n.toString(10) : n.toString(10);
-}
-
-var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
-              'Oct', 'Nov', 'Dec'];
-
-// 26 Feb 16:19:34
-function timestamp() {
-  var d = new Date();
-  var time = [pad(d.getHours()),
-              pad(d.getMinutes()),
-              pad(d.getSeconds())].join(':');
-  return [d.getDate(), months[d.getMonth()], time].join(' ');
-}
-
-exports.log = function (msg) {};
-
-exports.pump = null;
-
-var Object_keys = Object.keys || function (obj) {
-    var res = [];
-    for (var key in obj) res.push(key);
-    return res;
-};
-
-var Object_getOwnPropertyNames = Object.getOwnPropertyNames || function (obj) {
-    var res = [];
-    for (var key in obj) {
-        if (Object.hasOwnProperty.call(obj, key)) res.push(key);
-    }
-    return res;
-};
-
-var Object_create = Object.create || function (prototype, properties) {
-    // from es5-shim
-    var object;
-    if (prototype === null) {
-        object = { '__proto__' : null };
-    }
-    else {
-        if (typeof prototype !== 'object') {
-            throw new TypeError(
-                'typeof prototype[' + (typeof prototype) + '] != \'object\''
-            );
-        }
-        var Type = function () {};
-        Type.prototype = prototype;
-        object = new Type();
-        object.__proto__ = prototype;
-    }
-    if (typeof properties !== 'undefined' && Object.defineProperties) {
-        Object.defineProperties(object, properties);
-    }
-    return object;
-};
-
-exports.inherits = function(ctor, superCtor) {
-  ctor.super_ = superCtor;
-  ctor.prototype = Object_create(superCtor.prototype, {
-    constructor: {
-      value: ctor,
-      enumerable: false,
-      writable: true,
-      configurable: true
-    }
-  });
-};
-
-var formatRegExp = /%[sdj%]/g;
-exports.format = function(f) {
-  if (typeof f !== 'string') {
-    var objects = [];
-    for (var i = 0; i < arguments.length; i++) {
-      objects.push(exports.inspect(arguments[i]));
-    }
-    return objects.join(' ');
-  }
-
-  var i = 1;
-  var args = arguments;
-  var len = args.length;
-  var str = String(f).replace(formatRegExp, function(x) {
-    if (x === '%%') return '%';
-    if (i >= len) return x;
-    switch (x) {
-      case '%s': return String(args[i++]);
-      case '%d': return Number(args[i++]);
-      case '%j': return JSON.stringify(args[i++]);
-      default:
-        return x;
-    }
-  });
-  for(var x = args[i]; i < len; x = args[++i]){
-    if (x === null || typeof x !== 'object') {
-      str += ' ' + x;
-    } else {
-      str += ' ' + exports.inspect(x);
-    }
-  }
-  return str;
-};
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = dragstream
-
-var Stream = require('stream')
-  , read = require('domnode-dom').createReadStream
-  , through = require('through')
-
-function dragstream(el) {
-  var body = el.ownerDocument.body
-    , down = read(el, 'mousedown')
-    , up = read(body, 'mouseup', false)
-    , move = read(body, 'mousemove', false)
-    , anchor = {x: 0, y: 0, t: 0}
-    , drag = through(on_move)
-
-  // default to "paused"
-  drag.pause()
-
-  down.on('data', on_down)
-  up.on('data', on_up)
-
-  return move.pipe(drag)
-
-  // listeners:
-
-  function on_move(ev) {
-    if(drag.paused) return
-
-    drag.emit('data', datum(
-        ev.screenX - anchor.x
-      , ev.screenY - anchor.y
-      , +new Date
-    ))
-
-    anchor.x = ev.screenX
-    anchor.y = ev.screenY
-  }
-
-  function on_down(ev) {
-    anchor.x = ev.screenX
-    anchor.y = ev.screenY
-    anchor.t = +new Date
-    drag.resume()
-    drag.emit('data', datum(
-        anchor.x
-      , anchor.y
-      , anchor.t
-    ))
-  }
-
-  function on_up(ev) {
-    drag.pause()
-    drag.emit('data', datum(
-        ev.screenX - anchor.x
-      , ev.screenY - anchor.y
-      , +new Date
-    ))
-  }
-
-  function datum(dx, dy, when) {
-    return {
-      dx: dx
-    , dy: dy
-    , dt: when - anchor.t
-    }
-  }
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/domnode-dom/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/domnode-dom/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = require('./lib/index')
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/domnode-dom/lib/index.js",function(require,module,exports,__dirname,__filename,process,global){var WriteStream = require('./writable')
-  , ReadStream = require('./readable')
-  , DOMStream = {}
-
-DOMStream.WriteStream = WriteStream
-DOMStream.ReadStream = ReadStream
-
-DOMStream.createAppendStream = function(el, mimetype) {
-  return new DOMStream.WriteStream(
-      el
-    , DOMStream.WriteStream.APPEND
-    , mimetype
-  )
-}
-
-DOMStream.createWriteStream = function(el, mimetype) {
-  return new DOMStream.WriteStream(
-      el
-    , DOMStream.WriteStream.WRITE
-    , mimetype
-  )
-}
-
-DOMStream.createReadStream =
-DOMStream.createEventStream = function(el, type, preventDefault) {
-  preventDefault = preventDefault === undefined ? true : preventDefault
-
-  return new DOMStream.ReadStream(
-      el
-    , type
-    , preventDefault
-  )
-}
-
-module.exports = DOMStream
-
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/domnode-dom/lib/writable.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = DOMStream
-
-var Stream = require('stream').Stream
-
-function DOMStream(el, mode, mimetype) {
-  this.el = el
-  this.mode = mode
-  this.mimetype = mimetype || 'text/html'
-
-  Stream.call(this)
-}
-
-var cons = DOMStream
-  , proto = cons.prototype = new Stream
-
-proto.constructor = cons
-
-cons.APPEND = 0
-cons.WRITE = 1
-
-proto.writable = true
-
-proto.setMimetype = function(mime) {
-  this.mimetype = mime
-}
-
-proto.write = function(data) {
-  var result = (this.mode === cons.APPEND) ? this.append(data) : this.insert(data)
-  this.emit('data', this.el.childNodes)
-  return result
-}
-
-proto.insert = function(data) {
-  this.el.innerHTML = ''
-  return this.append(data)
-}
-
-proto.append = function(data) {
-  var result = this[this.resolveMimetypeHandler()](data)
-
-  for(var i = 0, len = result.length; i < len; ++i) {
-    this.el.appendChild(result[i])
-  }
-
-  return true
-}
-
-proto.resolveMimetypeHandler = function() {
-  var type = this.mimetype.replace(/(\/\w)/, function(x) {
-    return x.slice(1).toUpperCase()
-  })
-  type = type.charAt(0).toUpperCase() + type.slice(1)
-
-  return 'construct'+type
-}
-
-proto.constructTextHtml = function(data) {
-  var isTableFragment = /(tr|td|th)/.test(data) && !/table/.test(data)
-    , div
-
-  if(isTableFragment) {
-    // wuh-oh.
-    div = document.createElement('table')
-  }
-
-  div = div || document.createElement('div')
-  div.innerHTML = data 
-
-  return [].slice.call(div.childNodes)
-}
-
-proto.constructTextPlain = function(data) {
-  var textNode = document.createTextNode(data)
-
-  return [textNode]
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/domnode-dom/lib/readable.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = DOMStream
-
-var Stream = require('stream').Stream
-
-var listener = function(el, type, onmsg) {
-  return el.addEventListener(type, onmsg, false)
-}
-
-if(typeof $ !== 'undefined')
-  listener = function(el, type, onmsg) {
-    return el = $(el)[type](onmsg)
-  }
-
-if(typeof document !== 'undefined' && !document.createElement('div').addEventListener)
-  listener = function(el, type, onmsg) {
-    return el.attachEvent('on'+type, onmsg)
-  }
-
-function DOMStream(el, eventType, shouldPreventDefault) {
-  this.el = el
-  this.eventType = eventType
-  this.shouldPreventDefault = shouldPreventDefault
-
-  var self = this
-
-  if(el && this.eventType)
-    listener(
-        this.el
-      , this.eventType
-      , function() { return self.listen.apply(self, arguments) }
-    )
-
-  Stream.call(this)
-}
-
-var cons = DOMStream
-  , proto = cons.prototype = new Stream
-
-proto.constructor = cons
-
-proto.listen = function(ev) { 
-  if(this.shouldPreventDefault)
-    ev.preventDefault ? ev.preventDefault() : (ev.returnValue = false)
-
-  var collectData = 
-    this.eventType === 'submit' ||
-    this.eventType === 'change' ||
-    this.eventType === 'keydown' ||
-    this.eventType === 'keyup' ||
-    this.eventType === 'input'
-
-  if(collectData) {
-    if(this.el.tagName.toUpperCase() === 'FORM')
-      return this.handleFormSubmit(ev)
-
-    return this.emit('data', valueFromElement(this.el))
-  }
-
-  this.emit('data', ev) 
-}
-
-proto.handleFormSubmit = function(ev) {
-  var elements = []
-
-  if(this.el.querySelectorAll) {
-    elements = this.el.querySelectorAll('input,textarea,select')
-  } else {
-    var inputs = {'INPUT':true, 'TEXTAREA':true, 'SELECT':true}
-
-    var recurse = function(el) {
-      for(var i = 0, len = el.childNodes.length; i < len; ++i) {
-        if(el.childNodes[i].tagName) {
-          if(inputs[el.childNodes[i].tagName.toUpperCase()]) {
-            elements.push(el)
-          } else {
-            recurse(el.childNodes[i])
-          }
-        }
-      }
-    }
-
-    recurse(this.el)
-  }
-
-  var output = {}
-    , attr
-    , val
-
-  for(var i = 0, len = elements.length; i < len; ++i) {
-    attr = elements[i].getAttribute('name')
-    val = valueFromElement(elements[i])
-
-    output[attr] = val
-  }
-
-  return this.emit('data', output)
-}
-
-function valueFromElement(el) {
-  switch(el.getAttribute('type')) {
-    case 'radio':
-      return el.checked ? el.value : null
-    case 'checkbox':
-      return 'data', el.checked
-  }
-  return el.value
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/through/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/drag-stream/node_modules/through/index.js",function(require,module,exports,__dirname,__filename,process,global){var Stream = require('stream')
-
-// through
-//
-// a stream that does nothing but re-emit the input.
-// useful for aggregating a series of changing but not ending streams into one stream)
-
-
-
-exports = module.exports = through
-through.through = through
-
-//create a readable writable stream.
-
-function through (write, end) {
-  write = write || function (data) { this.emit('data', data) }
-  end = end || function () { this.emit('end') }
-
-  var ended = false, destroyed = false
-  var stream = new Stream(), buffer = []
-  stream.buffer = buffer
-  stream.readable = stream.writable = true
-  stream.paused = false
-  stream.write = function (data) {
-    write.call(this, data)
-    return !stream.paused
-  }
-
-  function drain() {
-    while(buffer.length && !stream.paused) {
-      var data = buffer.shift()
-      if(null === data)
-        return stream.emit('end')
-      else
-        stream.emit('data', data)
-    }
-  }
-
-  stream.queue = function (data) {
-    buffer.push(data)
-    drain()
-  }
-
-  //this will be registered as the first 'end' listener
-  //must call destroy next tick, to make sure we're after any
-  //stream piped from here.
-  //this is only a problem if end is not emitted synchronously.
-  //a nicer way to do this is to make sure this is the last listener for 'end'
-
-  stream.on('end', function () {
-    stream.readable = false
-    if(!stream.writable)
-      process.nextTick(function () {
-        stream.destroy()
-      })
-  })
-
-  function _end () {
-    stream.writable = false
-    end.call(stream)
-    if(!stream.readable)
-      stream.destroy()
-  }
-
-  stream.end = function (data) {
-    if(ended) return
-    ended = true
-    if(arguments.length) stream.write(data)
-    _end() // will emit or queue
-  }
-
-  stream.destroy = function () {
-    if(destroyed) return
-    destroyed = true
-    ended = true
-    buffer.length = 0
-    stream.writable = stream.readable = false
-    stream.emit('close')
-  }
-
-  stream.pause = function () {
-    if(stream.paused) return
-    stream.paused = true
-    stream.emit('pause')
-  }
-  stream.resume = function () {
-    if(stream.paused) {
-      stream.paused = false
-    }
-    drain()
-    //may have become paused again,
-    //as drain emits 'data'.
-    if(!stream.paused)
-      stream.emit('drain')
-  }
-  return stream
-}
-
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/fullscreen/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/interact/node_modules/fullscreen/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = fullscreen
-fullscreen.available = available
-
-var EE = require('events').EventEmitter
-
-function available() {
-  return !!shim(document.body)
-}
-
-function fullscreen(el) {
-  var ael = el.addEventListener || el.attachEvent
-    , doc = el.ownerDocument
-    , body = doc.body
-    , rfs = shim(el)
-    , ee = new EE
-
-  var vendors = ['', 'webkit', 'moz', 'ms', 'o']
-
-  for(var i = 0, len = vendors.length; i < len; ++i) {
-    ael.call(doc, vendors[i]+'fullscreenchange', onfullscreenchange)
-    ael.call(doc, vendors[i]+'fullscreenerror', onfullscreenerror)
-  }
-
-  ee.release = release
-  ee.request = request
-  ee.target = fullscreenelement
-
-  if(!shim) {
-    setTimeout(function() {
-      ee.emit('error', new Error('fullscreen is not supported'))
-    }, 0)
-  }
-  return ee
-
-  function onfullscreenchange() {
-    if(!fullscreenelement()) {
-      return ee.emit('release')
-    }
-    ee.emit('attain')
-  }
-
-  function onfullscreenerror() {
-    ee.emit('error')
-  }
-
-  function request() {
-    return rfs.call(el)
-  }
-
-  function release() {
-    (el.exitFullscreen ||
-    el.exitFullscreen ||
-    el.webkitExitFullScreen ||
-    el.webkitExitFullscreen ||
-    el.mozExitFullScreen ||
-    el.mozExitFullscreen ||
-    el.msExitFullScreen ||
-    el.msExitFullscreen ||
-    el.oExitFullScreen ||
-    el.oExitFullscreen).call(el)
-  } 
-
-  function fullscreenelement() {
-    return 0 ||
-      doc.fullScreenElement ||
-      doc.fullscreenElement ||
-      doc.webkitFullScreenElement ||
-      doc.webkitFullscreenElement ||
-      doc.mozFullScreenElement ||
-      doc.mozFullscreenElement ||
-      doc.msFullScreenElement ||
-      doc.msFullscreenElement ||
-      doc.oFullScreenElement ||
-      doc.oFullscreenElement ||
-      null
-  }
-}
-
-function shim(el) {
-  return (el.requestFullscreen ||
-    el.webkitRequestFullscreen ||
-    el.webkitRequestFullScreen ||
-    el.mozRequestFullscreen ||
-    el.mozRequestFullScreen ||
-    el.msRequestFullscreen ||
-    el.msRequestFullScreen ||
-    el.oRequestFullscreen ||
-    el.oRequestFullScreen)
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/player-physics/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/player-physics/index.js",function(require,module,exports,__dirname,__filename,process,global){var THREE = require('three')
-var inherits = require('inherits')
-var stream = require('stream')
-
-var PI_2 = Math.PI / 2
-
-/**
- * based on PointerLockControls by mrdoob / http://mrdoob.com/
- * converted to a module + stream by @maxogden and @substack
- */
-
-module.exports = function(camera, opts) {
-  return new PlayerPhysics(camera, opts)
-}
-
-module.exports.PlayerPhysics = PlayerPhysics
-
-function PlayerPhysics(camera, opts) {
-  if (!(this instanceof PlayerPhysics)) return new PlayerPhysics(camera, opts)
-  var self = this
-  if (!opts) opts = {}
-  
-  
-  this.readable = true
-  this.writable = true
-  this.enabled = false
-  
-  this.speed = {
-    jump: ( opts.jump === undefined ? 3.25 : opts.jump ),
-    move: ( opts.move === undefined ? 0.2 : opts.move ),
-    fall: ( opts.fall === undefined ? 0.3 : opts.fall ),
-  }
-  
-  this.jumpTime = 250
-  this.jumpRemaining = 0
-
-  this.pitchObject = opts.pitchObject || new THREE.Object3D()
-  if (camera) this.pitchObject.add( camera )
-
-  this.yawObject = opts.yawObject || new THREE.Object3D()
-  this.yawObject.position.y = 10
-  this.yawObject.add( this.pitchObject )
-
-  this.moveForward = false
-  this.moveBackward = false
-  this.moveLeft = false
-  this.moveRight = false
-
-  this.freedom = {
-    'x+': true,
-    'x-': true,
-    'y+': true,
-    'y-': true,
-    'z+': true,
-    'z-': true
-  }
-  
-  this.wantsJump = false
-  this.gravityEnabled = opts.gravityEnabled === undefined ? true : !!opts.gravityEnabled
-  
-  this.velocity = opts.velocityObject || new THREE.Vector3()
-
-  this.on('command', function(command, setting) {
-    self[command] = setting
-  })  
-}
-
-inherits(PlayerPhysics, stream.Stream)
-
-PlayerPhysics.prototype.playerIsMoving = function() { 
-  var v = this.velocity
-  if (Math.abs(v.x) > 0.1 || Math.abs(v.y) > 0.1 || Math.abs(v.z) > 0.1) return true
-  return false
-}
-
-PlayerPhysics.prototype.write = function(data) {
-  if (this.enabled === false) return
-  this.applyRotationDeltas(data)
-}
-
-PlayerPhysics.prototype.end = function() {
-  this.emit('end')
-}
-
-PlayerPhysics.prototype.applyRotationDeltas = function(deltas) {
-  this.yawObject.rotation.y -= deltas.dx * 0.002
-  this.pitchObject.rotation.x -= deltas.dy * 0.002
-  this.pitchObject.rotation.x = Math.max(-PI_2, Math.min(PI_2, this.pitchObject.rotation.x))
-}
-
-PlayerPhysics.prototype.tick = function (delta, cb) {
-  if (this.enabled === false) return
-
-  delta *= 0.1
-
-  this.velocity.x += (-this.velocity.x) * 0.08 * delta
-  this.velocity.z += (-this.velocity.z) * 0.08 * delta
-
-  if (this.freedom['y-']) this.wantsJump = false
-  if (this.wantsJump && this.jumpRemaining <= 0) this.jumpRemaining = this.jumpTime
-  if (this.jumpRemaining > 0) this.jumpRemaining -= delta * 100
-  if (this.jumpRemaining > 0) {
-    if(this.gravityEnabled) this.velocity.y += this.speed.jump * delta
-  } else {
-    this.jumpRemaining = 0
-    if (this.gravityEnabled) this.velocity.y -= this.speed.fall * delta
-  }
-
-  if (this.moveForward) this.velocity.z -= this.speed.move * delta
-  if (this.moveBackward) this.velocity.z += this.speed.move * delta
-
-  if (this.moveLeft) this.velocity.x -= this.speed.move * delta
-  if (this.moveRight) this.velocity.x += this.speed.move * delta
-  
-  if (!this.freedom['x-']) this.velocity.x = Math.max(0, this.velocity.x)
-  if (!this.freedom['x+']) this.velocity.x = Math.min(0, this.velocity.x)
-  if (!this.freedom['y-']) this.velocity.y = Math.max(-0.0001, this.velocity.y)
-  if (!this.freedom['y+']) this.velocity.y = Math.min(0, this.velocity.y)
-  if (!this.freedom['z-']) this.velocity.z = Math.max(0, this.velocity.z)
-  if (!this.freedom['z+']) this.velocity.z = Math.min(0, this.velocity.z)
-  
-  if (cb) cb(this)
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/raf/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/raf/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = raf
-
-var EE = require('events').EventEmitter
-  , global = typeof window === 'undefined' ? this : window
-
-var _raf =
-  global.requestAnimationFrame ||
-  global.webkitRequestAnimationFrame ||
-  global.mozRequestAnimationFrame ||
-  global.msRequestAnimationFrame ||
-  global.oRequestAnimationFrame ||
-  (global.setImmediate ? function(fn, el) {
-    setImmediate(fn)
-  } :
-  function(fn, el) {
-    setTimeout(fn, 0)
-  })
-
-function raf(el) {
-  var now = raf.now()
-    , ee = new EE
-
-  ee.pause = function() { ee.paused = true }
-  ee.resume = function() { ee.paused = false }
-
-  _raf(iter, el)
-
-  return ee
-
-  function iter(timestamp) {
-    var _now = raf.now()
-      , dt = _now - now
+    var step = 2.0;
     
-    now = _now
-
-    ee.emit('data', dt)
-
-    if(!ee.paused) {
-      _raf(iter, el)
-    }
-  }
-}
-
-raf.polyfill = _raf
-raf.now = function() { return Date.now() }
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/collide-3d-tilemap/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/collide-3d-tilemap/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = function(field, tilesize, dimensions, offset) {
-  dimensions = dimensions || [ 
-    Math.sqrt(field.length) >> 0
-  , Math.sqrt(field.length) >> 0
-  , Math.sqrt(field.length) >> 0
-  ] 
-
-  offset = offset || [
-    0
-  , 0
-  , 0
-  ]
-
-  field = typeof field === 'function' ? field : function(x, y, z) {
-    return this[x + y * dimensions[1] + (z * dimensions[1] * dimensions[2])]
-  }.bind(field) 
-
-  var coords
-
-  coords = [0, 0, 0]
-
-  return collide
-
-  function collide(box, vec, oncollision) {
-    if(vec[0] === 0 && vec[1] === 0 && vec[2] === 0) return
-
-    // collide x, then y
-    collideaxis(0)
-    collideaxis(1)
-    collideaxis(2)
-
-    function collideaxis(i_axis) {
-      var j_axis = (i_axis + 1) % 3
-        , k_axis = (i_axis + 2) % 3 
-        , posi = vec[i_axis] > 0
-        , leading = box[posi ? 'max' : 'base'][i_axis] 
-        , dir = posi ? 1 : -1
-        , i_start = Math.floor(leading / tilesize)
-        , i_end = (Math.floor((leading + vec[i_axis]) / tilesize)) + dir
-        , j_start = Math.floor(box.base[j_axis] / tilesize)
-        , j_end = Math.ceil(box.max[j_axis] / tilesize)
-        , k_start = Math.floor(box.base[k_axis] / tilesize) 
-        , k_end = Math.ceil(box.max[k_axis] / tilesize)
-        , done = false
-        , edge_vector
-        , edge
-        , tile
-
-      // loop from the current tile coord to the dest tile coord
-      //    -> loop on the opposite axis to get the other candidates
-      //      -> if `oncollision` return `true` we've hit something and
-      //         should break out of the loops entirely.
-      //         NB: `oncollision` is where the client gets the chance
-      //         to modify the `vec` in-flight.
-      // once we're done translate the box to the vec results
-
-      var step = 0
-      for(var i = i_start; !done && i !== i_end; ++step, i += dir) {
-        if(i < offset[i_axis] || i >= dimensions[i_axis]) continue
-        for(var j = j_start; !done && j !== j_end; ++j) {
-          if(j < offset[j_axis] || j >= dimensions[j_axis]) continue
-          for(var k = k_start; k !== k_end; ++k) {
-            if(k < offset[k_axis] || k >= dimensions[k_axis]) continue
-            coords[i_axis] = i
-            coords[j_axis] = j
-            coords[k_axis] = k
-            tile = field.apply(field, coords)
-
-            if(tile === undefined) continue
-
-            edge = dir > 0 ? i * tilesize : (i + 1) * tilesize
-            edge_vector = edge - leading
-
-            if(oncollision(i_axis, tile, coords, dir, edge_vector)) {
-              done = true
-              break
-            }
-          } 
-        }
+    if(dx < -EPSILON) {
+      if(fx < EPSILON)
+        fx = 1.0;
+      var s = -fx/dx;
+      if(s < step) {
+        norm_axis = 1;
+        step = s;
       }
-
-      coords[0] = coords[1] = coords[2] = 0
-      coords[i_axis] = vec[i_axis]
-      box.translate(coords)
     }
-  }  
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/aabb-3d/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/aabb-3d/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = AABB
-
-var vec3 = require('gl-matrix').vec3
-
-function AABB(pos, vec) {
-  if(!(this instanceof AABB)) {
-    return new AABB(pos, vec)
+    if(dx > EPSILON) {
+      var s = (1.0-fx)/dx;
+      if(s < step) {
+        norm_axis = -1;
+        step = s;
+      }
+    }
+    
+    if(dy < -EPSILON) {
+      if(fy < EPSILON)
+        fy = 1.0;
+      var s = -fy/dy;
+      if(s < step) {
+        norm_axis = 2;
+        step = s;
+      }
+    }
+    if(dy > EPSILON) {
+      var s = (1.0-fy)/dy;
+      if(s < step) {
+        norm_axis = -2;
+        step = s;
+      }
+    }
+    if(dz < -EPSILON) {
+      if(fz < EPSILON)
+        fz = 1.0;
+      var s = -fz/dz;
+      if(s < step) {
+        norm_axis = 3;
+        step = s;
+      }
+    }
+    if(dz > EPSILON) {
+      var s = (1.0-fz)/dz;
+      if(s < step) {
+        norm_axis = -3;
+        step = s;
+      }
+    }
+    
+    step = Math.min(step, 1.0) + EPSILON
+    
+    t += step;
+    ox += dx * step;
+    oy += dy * step;
+    oz += dz * step;
   }
-
-  this.base = pos
-  this.vec = vec
-
-  this.mag = vec3.length(this.vec)
-
-  this.max = vec3.create()
-  vec3.add(this.max, this.base, this.vec)
+  return -1;
 }
 
-var cons = AABB
-  , proto = cons.prototype
+module.exports = traceRay;
+},{}],25:[function(require,module,exports){function flt(f) {
+  return ((f += '').indexOf('.') === -1) ? f + '.0' : f
+};
 
-proto.width = function() {
-  return this.vec[0]
-}
+module.exports = function sampler3D(name, res) {
+  res = res || 32
+  return [
+  "const float tex3d_size = " + flt(res) + ";"
+, "const float tex3d_sliceSize = " + flt(1/res) + ";"
+, "const float tex3d_slicePixelSize = " + flt(1/(res*res)) + ";"
+, "const float tex3d_sliceInnerSize = " + flt(1/(res*res) * (res - 1)) + ";"
 
-proto.height = function() {
-  return this.vec[1]
-}
+, "vec4 " + (name || 'sampleAs3DTexture') + "(sampler2D tex, vec3 texCoord) {"
+  , "float zSlice0 = min(floor(texCoord.z * tex3d_size), " + flt(res - 1) + ");"
+  , "float zSlice1 = min(zSlice0 + 1.0, " + flt(res - 1) + ");"
+  , "float xOffset = tex3d_slicePixelSize * 0.5 + texCoord.x * tex3d_sliceInnerSize;"
+  , "float s0 = xOffset + (zSlice0 * tex3d_sliceSize);"
+  , "float s1 = xOffset + (zSlice1 * tex3d_sliceSize);"
+  , "vec4 slice0Color = texture2D(tex, vec2(s0, texCoord.y));"
+  , "vec4 slice1Color = texture2D(tex, vec2(s1, texCoord.y));"
+  , "float zOffset = mod(texCoord.z * tex3d_size, 1.0);"
+  , "return mix(slice0Color, slice1Color, zOffset);"
+, "}" ].join('\n')
+};
 
-proto.depth = function() {
-  return this.vec[2]
-}
+module.exports.dynamic = [
+"vec4 sampleAs3DTexture(sampler2D tex, vec3 texCoord, float size) {"
+  , "float sliceSize = 1.0 / size;                         // space of 1 slice"
+  , "float slicePixelSize = sliceSize / size;              // space of 1 pixel"
+  , "float sliceInnerSize = slicePixelSize * (size - 1.0); // space of size pixels"
+  , "float zSlice0 = min(floor(texCoord.z * size), size - 1.0);"
+  , "float zSlice1 = min(zSlice0 + 1.0, size - 1.0);"
+  , "float xOffset = slicePixelSize * 0.5 + texCoord.x * sliceInnerSize;"
+  , "float s0 = xOffset + (zSlice0 * sliceSize);"
+  , "float s1 = xOffset + (zSlice1 * sliceSize);"
+  , "vec4 slice0Color = texture2D(tex, vec2(s0, texCoord.y));"
+  , "vec4 slice1Color = texture2D(tex, vec2(s1, texCoord.y));"
+  , "float zOffset = mod(texCoord.z * size, 1.0);"
+  , "return mix(slice0Color, slice1Color, zOffset);"
+, "}" ].join('\n')
 
-proto.x0 = function() {
-  return this.base[0]
-}
-
-proto.y0 = function() {
-  return this.base[1]
-}
-
-proto.z0 = function() {
-  return this.base[2]
-}
-
-proto.x1 = function() {
-  return this.max[0]
-}
-
-proto.y1 = function() {
-  return this.max[1]
-}
-
-proto.z1 = function() {
-  return this.max[2]
-}
-
-proto.translate = function(by) {
-  vec3.add(this.max, this.max, by)
-  vec3.add(this.base, this.base, by)
-  return this
-}
-
-proto.expand = function(aabb) {
-  var max = vec3.create()
-    , min = vec3.create()
-
-  vec3.max(max, aabb.max, this.max)
-  vec3.min(min, aabb.base, this.base)
-  vec3.sub(max, max, min)
-
-  return new AABB(min, max)
-}
-
-proto.intersects = function(aabb) {
-  if(aabb.base[0] > this.max[0]) return false
-  if(aabb.base[1] > this.max[1]) return false
-  if(aabb.base[2] > this.max[2]) return false
-  if(aabb.max[0] < this.base[0]) return false
-  if(aabb.max[1] < this.base[1]) return false
-  if(aabb.max[2] < this.base[2]) return false
-
-  return true
-}
-
-proto.union = function(aabb) {
-  if(!this.intersects(aabb)) return null
-
-  var base_x = Math.max(aabb.base[0], this.base[0])
-    , base_y = Math.max(aabb.base[1], this.base[1])
-    , base_z = Math.max(aabb.base[2], this.base[2])
-    , max_x = Math.min(aabb.max[0], this.max[0])
-    , max_y = Math.min(aabb.max[1], this.max[1])
-    , max_z = Math.min(aabb.max[2], this.max[2])
-
-  return new AABB([base_x, base_y, base_z], [max_x - base_x, max_y - base_y, max_z - base_z])
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/aabb-3d/node_modules/gl-matrix/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"dist/gl-matrix.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/aabb-3d/node_modules/gl-matrix/dist/gl-matrix.js",function(require,module,exports,__dirname,__filename,process,global){/**
+},{}],40:[function(require,module,exports){(function(){/**
  * @fileoverview gl-matrix - High performance matrix and vector operations
  * @author Brandon Jones
  * @author Colin MacKenzie IV
@@ -43931,932 +43479,8 @@ if(typeof(exports) !== 'undefined') {
   })(shim.exports);
 })();
 
-});
-
-require.define("/node_modules/voxel-engine/node_modules/spatial-events/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/spatial-events/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = SpatialEventEmitter
-
-var slice = [].slice
-  , Tree = require('./tree')
-  , aabb = require('aabb-3d')
-
-function SpatialEventEmitter() {
-  this.root = null
-  this.infinites = {}
-}
-
-var cons = SpatialEventEmitter
-  , proto = cons.prototype
-
-proto.size = 16
-
-proto.addListener = 
-proto.addEventListener = 
-proto.on = function(event, bbox, listener) {
-  if(!finite(bbox)) {
-    (this.infinites[event] = this.infinites[event] || []).push({
-      bbox: bbox
-    , func: listener
-    })
-    return this
-  }
-
-  (this.root = this.root || this.create_root(bbox))
-    .add(event, bbox, listener)
-
-  return this
-}
-
-proto.once = function(event, bbox, listener) {
-  var self = this
-
-  self.on(event, bbox, function once() {
-    listener.apply(null, arguments)
-    self.remove(event, once)
-  })
-
-  return self
-}
-
-proto.removeListener =
-proto.removeEventListener =
-proto.remove = function(event, listener) {
-  if(this.root) {
-    this.root.remove(event, listener)
-  }
-
-  if(!this.infinites[event]) {
-    return this
-  }
-
-  for(var i = 0, len = this.infinites[event].length; i < len; ++i) {
-    if(this.infinites[event][i].func === listener) {
-      break
-    }
-  }
-
-  if(i !== len) {
-    this.infinites[event].splice(i, 1)
-  }
-
-  return this
-}
-
-proto.emit = function(event, bbox/*, ...args */) {
-  var args = slice.call(arguments, 2)
-
-  // support point emitting
-  if('0' in bbox) {
-    bbox = aabb(bbox, [0, 0, 0]) 
-  }
-
-  if(this.root) {
-    this.root.send(event, bbox, args)
-  }
-
-  if(!this.infinites[event]) {
-    return this
-  }
-
-  var list = this.infinites[event].slice()
-  for(var i = 0, len = list.length; i < len; ++i) {
-    if(list[i].bbox.intersects(bbox)) {
-      list[i].func.apply(null, args) 
-    }
-  }
-
-  return this
-}
-
-proto.rootSize = function(size) {
-  proto.size = size
-}
-
-proto.create_root = function(bbox) {
-  var self = this
-    , size = self.size
-    , base = [
-        Math.floor(bbox.x0() / size) * size
-      , Math.floor(bbox.y0() / size) * size
-      , Math.floor(bbox.z0() / size) * size
-      ]
-    , tree_bbox = new bbox.constructor(base, [size, size, size])
-
-  function OurTree(size, bbox) {
-    Tree.call(this, size, bbox, null)
-  }
-
-  OurTree.prototype = Object.create(Tree.prototype)
-  OurTree.prototype.constructor = OurTree
-  OurTree.prototype.grow = function(new_root) {
-    self.root = new_root
-  }
-  OurTree.prototype.min_size = size
-
-  return new OurTree(size, tree_bbox) 
-}
-
-function finite(bbox) {
-  return isFinite(bbox.x0()) &&
-         isFinite(bbox.x1()) &&
-         isFinite(bbox.y0()) &&
-         isFinite(bbox.y1()) &&
-         isFinite(bbox.z0()) &&
-         isFinite(bbox.z1())
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/spatial-events/tree.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = Tree
-
-var aabb = require('aabb-3d')
-
-function Tree(size, bbox, parent) {
-  this.listeners = {}
-  this.size = size
-  this.bbox = bbox
-  this.parent = parent
-  this.children = []
-}
-
-var cons = Tree
-  , proto = cons.prototype
-
-proto.add = function(event, bbox, listener) {
-  if(!this.parent && !this.contains(bbox)) {
-    return this.expand(bbox).add(event, bbox, listener)
-  }
-
-  for(var i = 0, len = this.children.length; i < len; ++i) {
-    if(this.children[i].contains(bbox)) {
-      return this.children[i].add(event, bbox, listener)
-    }
-  }
-
-  var size = this.size / 2
-
-  if(size > this.min_size && bbox.vec[0] < size && bbox.vec[1] < size && bbox.vec[2] < size) {
-    // if it fits into a child node, make that childnode
-    if(Math.floor(bbox.x0() / size) === Math.floor(bbox.x1() / size) &&
-       Math.floor(bbox.y0() / size) === Math.floor(bbox.y1() / size) &&
-       Math.floor(bbox.z0() / size) === Math.floor(bbox.z1() / size)) {
-      var inst = new this.constructor(
-          size
-        , aabb([
-              Math.floor(bbox.x0() / size) * size
-            , Math.floor(bbox.y0() / size) * size
-            , Math.floor(bbox.z0() / size) * size
-            ]
-          , [size, size, size]
-          )
-        , this
-      )
-      this.children.push(inst)
-      return inst.add(event, bbox, listener)
-    }
-  }
-
-  (this.listeners[event] = this.listeners[event] || [])
-    .push({bbox: bbox, func: listener})
-}
-
-proto.contains = function(bbox) {
-  return bbox.x0() >= this.bbox.x0() &&
-         bbox.y0() >= this.bbox.y0() &&
-         bbox.z0() >= this.bbox.z0() &&
-         bbox.x1() <= this.bbox.x1() &&
-         bbox.y1() <= this.bbox.y1() &&
-         bbox.z1() <= this.bbox.z1()
-}
-
-proto.expand = function(bbox) {
-  var size = this.size
-    , new_size = size * 2
-    , expanded = this.bbox.expand(bbox)
-    , new_i = Math.floor(bbox.x0() / size)
-    , new_j = Math.floor(bbox.y0() / size)
-    , new_k = Math.floor(bbox.z0() / size)
-    , cur_i = Math.floor(this.bbox.x0() / size)
-    , cur_j = Math.floor(this.bbox.y0() / size)
-    , cur_k = Math.floor(this.bbox.z0() / size)
-    , new_base = [
-        new_i - cur_i >= 0 ? cur_i : cur_i - 1
-      , new_j - cur_j >= 0 ? cur_j : cur_j - 1
-      , new_k - cur_k >= 0 ? cur_k : cur_k - 1
-      ].map(function(ii) { return ii * size })
-    , new_bbox = aabb(new_base, [new_size, new_size, new_size])
-    , new_root = new this.constructor(new_size, new_bbox)
-    , self = this
-
-  this.parent = new_root
-  this.grow(this.parent)
-
-  new_root.children.push(self)
-
-  return new_root
-}
-
-proto.remove = function(event, listener) {
-  var list = this.listeners[event]
-  if(list) {
-    for(var i = 0, len = list.length; i < len; ++i) {
-      if(list[i].func === listener)
-        break
-    }
-
-    if(i !== len) {
-      list.splice(i, 1)
-    }
-  }
-  for(var i = 0, len = this.children.length; i < len; ++i) {
-    this.children[i].remove(event, listener)
-  }
-}
-
-proto.send = function(event, bbox, args) {
-  for(var i = 0, len = this.children.length; i < len; ++i) {
-    if(bbox.intersects(this.children[i].bbox)) {
-      this.children[i].send(event, bbox, args)
-    }
-  }
-
-  var list = this.listeners[event]
-  if(!list) {
-    return
-  }
-
-  for(var i = 0, len = list.length; i < len; ++i) {
-    if(list[i].bbox.intersects(bbox)) {
-      list[i].func.apply(null, args)
-    }
-  }
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-region-change/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-region-change/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = coordinates
- 
-var aabb = require('aabb-3d')
-var events = require('events')
- 
-function coordinates(spatial, box, regionWidth) {
-  var emitter = new events.EventEmitter()
-  var lastRegion = [NaN, NaN, NaN]
-  var thisRegion
-
-  if (arguments.length === 2) {
-    regionWidth = box
-    box = aabb([-Infinity, -Infinity, -Infinity], [Infinity, Infinity, Infinity])
-  }
-
-  spatial.on('position', box, updateRegion)
-  
-  function updateRegion(pos) {
-    thisRegion = [Math.floor(pos.x / regionWidth), Math.floor(pos.y / regionWidth), Math.floor(pos.z / regionWidth)]
-    if (thisRegion[0] !== lastRegion[0] || thisRegion[1] !== lastRegion[1] || thisRegion[2] !== lastRegion[2]) {
-      emitter.emit('change', thisRegion)
-    }
-    lastRegion = thisRegion
-  }
- 
-  return emitter
-}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-texture/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-texture/index.js",function(require,module,exports,__dirname,__filename,process,global){var transparent = require('opaque').transparent;
-
-function Texture(opts) {
-  var self = this;
-  if (!(this instanceof Texture)) return new Texture(opts || {});
-  this.THREE              = opts.THREE          || require('three');
-  this.materials          = [];
-  this.texturePath        = opts.texturePath    || '/textures/';
-  this.materialParams     = opts.materialParams || {};
-  this.materialType       = opts.materialType   || this.THREE.MeshLambertMaterial;
-  this.materialIndex      = [];
-  this._materialDefaults  = { ambient: 0xbbbbbb };
-  this.applyTextureParams = opts.applyTextureParams || function(map) {
-    map.magFilter = self.THREE.NearestFilter;
-    map.minFilter = self.THREE.LinearMipMapLinearFilter;
-    map.wrapT     = self.THREE.RepeatWrapping;
-    map.wrapS     = self.THREE.RepeatWrapping;
-  }
-}
-module.exports = Texture;
-
-Texture.prototype.load = function(names, opts) {
-  var self = this;
-  opts = self._options(opts);
-  if (!isArray(names)) names = [names];
-  if (!hasSubArray(names)) names = [names];
-  return [].concat.apply([], names.map(function(name) {
-    name = self._expandName(name);
-    self.materialIndex.push([self.materials.length, self.materials.length + name.length]);
-    return name.map(function(n) {
-      if (n instanceof self.THREE.Texture) {
-        var map = n;
-        n = n.name;
-      } else if (typeof n === 'string') {
-        var map = self.THREE.ImageUtils.loadTexture(self.texturePath + ext(n));
-      } else {
-        var map = new self.THREE.Texture(n);
-        n = map.name;
-      }
-      self.applyTextureParams.call(self, map);
-      var mat = new opts.materialType(opts.materialParams);
-      mat.map = map;
-      mat.name = n;
-      if (opts.transparent == null) self._isTransparent(mat);
-      self.materials.push(mat);
-      return mat;
-    });
-  }));
-};
-
-Texture.prototype.get = function(index) {
-  if (index == null) return this.materials;
-  if (typeof index === 'number') {
-    index = this.materialIndex[index];
-  } else {
-    for (var i = 0; i < this.materials.length; i++) {
-      if (index === this.materials[i].name) {
-        index = i;
-        break;
-      }
-    }
-    for (var i = 0; i < this.materialIndex.length; i++) {
-      var idx = this.materialIndex[i];
-      if (index >= idx[0] && index < idx[1]) {
-        index = idx;
-        break;
-      }
-    }
-  }
-  return this.materials.slice(index[0], index[1]);
-};
-
-Texture.prototype._expandName = function(name) {
-  if (name.top) return [name.back, name.front, name.top, name.bottom, name.left, name.right];
-  if (!isArray(name)) name = [name];
-  // load the 0 texture to all
-  if (name.length === 1) name = [name[0],name[0],name[0],name[0],name[0],name[0]];
-  // 0 is top/bottom, 1 is sides
-  if (name.length === 2) name = [name[1],name[1],name[0],name[0],name[1],name[1]];
-  // 0 is top, 1 is bottom, 2 is sides
-  if (name.length === 3) name = [name[2],name[2],name[0],name[1],name[2],name[2]];
-  // 0 is top, 1 is bottom, 2 is front/back, 3 is left/right
-  if (name.length === 4) name = [name[2],name[2],name[0],name[1],name[3],name[3]];
-  return name;
-};
-
-Texture.prototype._options = function(opts) {
-  opts = opts || {};
-  opts.materialType = opts.materialType || this.materialType;
-  opts.materialParams = defaults(opts.materialParams || {}, this._materialDefaults, this.materialParams);
-  opts.applyTextureParams = opts.applyTextureParams || this.applyTextureParams;
-  return opts;
-};
-
-Texture.prototype.paint = function(geom) {
-  var self = this;
-  geom.faces.forEach(function(face, i) {
-    var c = face.vertexColors[0];
-    var index = Math.floor(c.b*255 + c.g*255*255 + c.r*255*255*255);
-    index = self.materialIndex[Math.floor(Math.max(0, index - 1) % self.materialIndex.length)][0];
-
-    // BACK, FRONT, TOP, BOTTOM, LEFT, RIGHT
-    if      (face.normal.z === 1)  index += 1;
-    else if (face.normal.y === 1)  index += 2;
-    else if (face.normal.y === -1) index += 3;
-    else if (face.normal.x === -1) index += 4;
-    else if (face.normal.x === 1)  index += 5;
-
-    face.materialIndex = index;
-  });
-};
-
-Texture.prototype.sprite = function(name, w, h, cb) {
-  var self = this;
-  if (typeof w === 'function') { cb = w; w = null; }
-  if (typeof h === 'function') { cb = h; h = null; }
-  w = w || 16; h = h || w;
-  var img = new Image();
-  img.src = self.texturePath + ext(name);
-  img.onerror = cb;
-  img.onload = function() {
-    var textures = [];
-    for (var x = 0; x < img.width; x += w) {
-      for (var y = 0; y < img.height; y += h) {
-        var canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        var ctx = canvas.getContext('2d');
-        ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
-        var tex = new self.THREE.Texture(canvas);
-        tex.name = name + '_' + x + '_' + y;
-        tex.needsUpdate = true;
-        textures.push(tex);
-      }
-    }
-    cb(null, textures);
-  };
-  return self;
-};
-
-Texture.prototype._isTransparent = function(material) {
-  if (!material.map) return;
-  if (!material.map.image) return;
-  if (material.map.image.nodeName.toLowerCase() === 'img') {
-    material.map.image.onload = function() {
-      if (transparent(this)) {
-        material.transparent = true;
-        material.needsUpdate = true;
-      }
-    };
-  } else {
-    if (transparent(material.map.image)) {
-      material.transparent = true;
-      material.needsUpdate = true;
-    }
-  }
-};
-
-function ext(name) {
-  return (String(name).indexOf('.') !== -1) ? name : name + '.png';
-}
-
-// copied from https://github.com/joyent/node/blob/master/lib/util.js#L433
-function isArray(ar) {
-  return Array.isArray(ar) || (typeof ar === 'object' && Object.prototype.toString.call(ar) === '[object Array]');
-}
-
-function hasSubArray(ar) {
-  var has = false;
-  ar.forEach(function(a) { if (isArray(a)) { has = true; return false; } });
-  return has;
-}
-
-function defaults(obj) {
-  [].slice.call(arguments, 1).forEach(function(from) {
-    if (from) for (var k in from) if (obj[k] == null) obj[k] = from[k];
-  });
-  return obj;
-}
-
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-texture/node_modules/opaque/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-engine/node_modules/voxel-texture/node_modules/opaque/index.js",function(require,module,exports,__dirname,__filename,process,global){function opaque(image) {
-  var canvas, ctx
-
-  if (image.nodeName.toLowerCase() === 'img') {
-    canvas = document.createElement('canvas')
-    canvas.width = image.width
-    canvas.height = image.height
-    ctx = canvas.getContext('2d')
-    ctx.drawImage(image, 0, 0)
-  } else {
-    canvas = image
-    ctx = canvas.getContext('2d')
-  }
-
-  var imageData = ctx.getImageData(0, 0, canvas.height, canvas.width)
-    , data = imageData.data
-
-  for (var i = 3, l = data.length; i < l; i += 4)
-    if (data[i] !== 255)
-      return false
-
-  return true
-};
-
-module.exports = opaque
-module.exports.opaque = opaque
-module.exports.transparent = function(image) {
-  return !opaque(image)
-};
-});
-
-require.define("/node_modules/toolbar/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
-
-require.define("/node_modules/toolbar/index.js",function(require,module,exports,__dirname,__filename,process,global){var keymaster = require('./lib/keymaster.js')
-var inherits = require('inherits')
-var events = require('events')
-var elementClass = require('element-class')
-
-var keyTable =
-  {   8 : 'backspace'
-  ,   9 : 'tab'
-  ,  13 : 'enter'
-  ,  16 : 'shift'
-  ,  17 : 'ctrl'
-  ,  18 : 'alt'
-  ,  19 : 'pausebreak'
-  ,  20 : 'capslock'
-  ,  27 : 'esc'
-  ,  32 : 'spacebar'
-  ,  33 : 'pageup'
-  ,  34 : 'pagedown'
-  ,  35 : 'end'
-  ,  36 : 'home'
-  ,  37 : 'left'
-  ,  38 : 'up'
-  ,  39 : 'right'
-  ,  40 : 'down'
-  ,  45 : 'ins'
-  ,  46 : 'del'
-  ,  48 : '0'
-  ,  49 : '1'
-  ,  50 : '2'
-  ,  51 : '3'
-  ,  52 : '4'
-  ,  53 : '5'
-  ,  54 : '6'
-  ,  55 : '7'
-  ,  56 : '8'
-  ,  57 : '9'
-  ,  65 : 'a'
-  ,  66 : 'b'
-  ,  67 : 'c'
-  ,  68 : 'd'
-  ,  69 : 'e'
-  ,  70 : 'f'
-  ,  71 : 'g'
-  ,  72 : 'h'
-  ,  73 : 'i'
-  ,  74 : 'j'
-  ,  75 : 'k'
-  ,  76 : 'l'
-  ,  77 : 'm'
-  ,  78 : 'n'
-  ,  79 : 'o'
-  ,  80 : 'p'
-  ,  81 : 'q'
-  ,  82 : 'r'
-  ,  83 : 's'
-  ,  84 : 't'
-  ,  85 : 'u'
-  ,  86 : 'v'
-  ,  87 : 'w'
-  ,  88 : 'x'
-  ,  89 : 'y'
-  ,  90 : 'z'
-  ,  93 : 'select'
-  ,  96 : 'num_0'
-  ,  97 : 'num_1'
-  ,  98 : 'num_2'
-  ,  99 : 'num_3'
-  , 100 : 'num_4'
-  , 101 : 'num_5'
-  , 102 : 'num_6'
-  , 103 : 'num_7'
-  , 104 : 'num_8'
-  , 105 : 'num_9'
-  , 106 : 'multiply'
-  , 107 : 'add'
-  , 109 : 'subtract'
-  , 110 : 'decimalpoint'
-  , 111 : 'divide'
-  , 112 : 'f1'
-  , 113 : 'f2'
-  , 114 : 'f3'
-  , 115 : 'f4'
-  , 116 : 'f5'
-  , 117 : 'f6'
-  , 118 : 'f7'
-  , 119 : 'f8'
-  , 120 : 'f9'
-  , 121 : 'f10'
-  , 122 : 'f11'
-  , 123 : 'f12'
-  , 144 : 'numlock'
-  , 145 : 'scrolllock'
-  , 186 : 'semicolon'
-  , 187 : 'equalsign'
-  , 188 : 'comma'
-  , 189 : 'dash'
-  , 190 : 'period'
-  , 191 : 'forwardslash'
-  , 192 : 'graveaccent'
-  , 219 : 'openbracket'
-  , 220 : 'backslash'
-  , 221 : 'closebraket'
-  , 222 : 'singlequote'
-}
-
-module.exports = function(opts) {
-  return new HUD(opts)
-}
-
-function HUD(opts) {
-  if (!(this instanceof HUD)) return new HUD(opts)
-  var self = this
-  if (!opts) opts = {}
-  if (opts instanceof HTMLElement) opts = {el: opts}
-  this.opts = opts
-  this.el = opts.el || 'nav'
-  if (typeof this.el !== 'object') this.el = document.querySelector(this.el)
-  this.toolbarKeys = opts.toolbarKeys || ['1','2','3','4','5','6','7','8','9','0']
-  this.bindEvents()
-}
-
-inherits(HUD, events.EventEmitter)
-
-HUD.prototype.onKeyDown = function() {
-  var self = this
-  keymaster.getPressedKeyCodes().map(function(keyCode) {
-    var pressed = keyTable[keyCode]
-    if (self.toolbarKeys.indexOf(pressed) > -1) return self.switchToolbar(pressed)
-  })
-}
-
-HUD.prototype.bindEvents = function() {
-  var self = this
-  if (!this.opts.noKeydown) window.addEventListener('keydown', this.onKeyDown.bind(this))
-  var list = this.el.querySelectorAll('li')
-  list = Array.prototype.slice.call(list);
-  list.map(function(li) { 
-    li.addEventListener('click', self.onItemClick.bind(self))
-  })
-}
-
-HUD.prototype.onItemClick = function(ev) {
-  ev.preventDefault()
-  var idx = this.toolbarIndexOf(ev.currentTarget)
-  if (idx > -1) this.switchToolbar(idx)
-}
-
-HUD.prototype.addClass = function(el, className) {
-  if (!el) return
-  return elementClass(el).add(className)
-}
-
-HUD.prototype.removeClass = function(el, className) {
-  if (!el) return
-  return elementClass(el).remove(className)
-}
-
-HUD.prototype.toolbarIndexOf = function(li) {
-  var list = this.el.querySelectorAll('.tab-item') 
-  list = Array.prototype.slice.call(list)
-  var idx = list.indexOf(li)
-  if (idx > -1) ++idx
-  return idx
-}
-
-HUD.prototype.switchToolbar = function(num) {
-  this.removeClass(this.el.querySelector('.active'), 'active')
-  var selected = this.el.querySelectorAll('.tab-item')[+num-1]
-  this.addClass(selected, 'active')
-  var active = this.el.querySelector('.active .tab-label')
-  if (!active) return
-  var dataID = active.getAttribute('data-id')
-  this.emit('select', dataID ? dataID : active.innerText)
-}
-});
-
-require.define("/node_modules/toolbar/lib/keymaster.js",function(require,module,exports,__dirname,__filename,process,global){//     keymaster.js
-//     (c) 2011-2012 Thomas Fuchs
-//     keymaster.js may be freely distributed under the MIT license.
-
-;(function(global){
-  var k,
-    _handlers = {},
-    _mods = { 16: false, 18: false, 17: false, 91: false },
-    _scope = 'all',
-    // modifier keys
-    _MODIFIERS = {
-      '⇧': 16, shift: 16,
-      '⌥': 18, alt: 18, option: 18,
-      '⌃': 17, ctrl: 17, control: 17,
-      '⌘': 91, command: 91
-    },
-    // special keys
-    _MAP = {
-      backspace: 8, tab: 9, clear: 12,
-      enter: 13, 'return': 13,
-      esc: 27, escape: 27, space: 32,
-      left: 37, up: 38,
-      right: 39, down: 40,
-      del: 46, 'delete': 46,
-      home: 36, end: 35,
-      pageup: 33, pagedown: 34,
-      ',': 188, '.': 190, '/': 191,
-      '`': 192, '-': 189, '=': 187,
-      ';': 186, '\'': 222,
-      '[': 219, ']': 221, '\\': 220
-    },
-    _downKeys = [];
-
-  for(k=1;k<20;k++) _MODIFIERS['f'+k] = 111+k;
-
-  // IE doesn't support Array#indexOf, so have a simple replacement
-  function index(array, item){
-    var i = array.length;
-    while(i--) if(array[i]===item) return i;
-    return -1;
-  }
-
-  // handle keydown event
-  function dispatch(event, scope){
-    var key, handler, k, i, modifiersMatch;
-    key = event.keyCode;
-
-    if (index(_downKeys, key) == -1) {
-        _downKeys.push(key);
-    }
-
-    // if a modifier key, set the key.<modifierkeyname> property to true and return
-    if(key == 93 || key == 224) key = 91; // right command on webkit, command on Gecko
-    if(key in _mods) {
-      _mods[key] = true;
-      // 'assignKey' from inside this closure is exported to window.key
-      for(k in _MODIFIERS) if(_MODIFIERS[k] == key) assignKey[k] = true;
-      return;
-    }
-
-    // see if we need to ignore the keypress (filter() can can be overridden)
-    // by default ignore key presses if a select, textarea, or input is focused
-    if(!assignKey.filter.call(this, event)) return;
-
-    // abort if no potentially matching shortcuts found
-    if (!(key in _handlers)) return;
-
-    // for each potential shortcut
-    for (i = 0; i < _handlers[key].length; i++) {
-      handler = _handlers[key][i];
-
-      // see if it's in the current scope
-      if(handler.scope == scope || handler.scope == 'all'){
-        // check if modifiers match if any
-        modifiersMatch = handler.mods.length > 0;
-        for(k in _mods)
-          if((!_mods[k] && index(handler.mods, +k) > -1) ||
-            (_mods[k] && index(handler.mods, +k) == -1)) modifiersMatch = false;
-        // call the handler and stop the event if neccessary
-        if((handler.mods.length == 0 && !_mods[16] && !_mods[18] && !_mods[17] && !_mods[91]) || modifiersMatch){
-          if(handler.method(event, handler)===false){
-            if(event.preventDefault) event.preventDefault();
-              else event.returnValue = false;
-            if(event.stopPropagation) event.stopPropagation();
-            if(event.cancelBubble) event.cancelBubble = true;
-          }
-        }
-      }
-    }
-  };
-
-  // unset modifier keys on keyup
-  function clearModifier(event){
-    var key = event.keyCode, k,
-        i = index(_downKeys, key);
-
-    // remove key from _downKeys
-    if (i >= 0) {
-        _downKeys.splice(i, 1);
-    }
-
-    if(key == 93 || key == 224) key = 91;
-    if(key in _mods) {
-      _mods[key] = false;
-      for(k in _MODIFIERS) if(_MODIFIERS[k] == key) assignKey[k] = false;
-    }
-  };
-
-  function resetModifiers() {
-    for(k in _mods) _mods[k] = false;
-    for(k in _MODIFIERS) assignKey[k] = false;
-  }
-
-  // parse and assign shortcut
-  function assignKey(key, scope, method){
-    var keys, mods, i, mi;
-    if (method === undefined) {
-      method = scope;
-      scope = 'all';
-    }
-    key = key.replace(/\s/g,'');
-    keys = key.split(',');
-
-    if((keys[keys.length-1])=='')
-      keys[keys.length-2] += ',';
-    // for each shortcut
-    for (i = 0; i < keys.length; i++) {
-      // set modifier keys if any
-      mods = [];
-      key = keys[i].split('+');
-      if(key.length > 1){
-        mods = key.slice(0,key.length-1);
-        for (mi = 0; mi < mods.length; mi++)
-          mods[mi] = _MODIFIERS[mods[mi]];
-        key = [key[key.length-1]];
-      }
-      // convert to keycode and...
-      key = key[0]
-      key = _MAP[key] || key.toUpperCase().charCodeAt(0);
-      // ...store handler
-      if (!(key in _handlers)) _handlers[key] = [];
-      _handlers[key].push({ shortcut: keys[i], scope: scope, method: method, key: keys[i], mods: mods });
-    }
-  };
-
-  // Returns true if the key with code 'keyCode' is currently down
-  // Converts strings into key codes.
-  function isPressed(keyCode) {
-      if (typeof(keyCode)=='string') {
-          if (keyCode.length == 1) {
-              keyCode = (keyCode.toUpperCase()).charCodeAt(0);
-          } else {
-              return false;
-          }
-      }
-      return index(_downKeys, keyCode) != -1;
-  }
-
-  function getPressedKeyCodes() {
-      return _downKeys.slice(0);
-  }
-
-  function filter(event){
-    var tagName = (event.target || event.srcElement).tagName;
-    // ignore keypressed in any elements that support keyboard data input
-    return !(tagName == 'INPUT' || tagName == 'SELECT' || tagName == 'TEXTAREA');
-  }
-
-  // initialize key.<modifier> to false
-  for(k in _MODIFIERS) assignKey[k] = false;
-
-  // set current scope (default 'all')
-  function setScope(scope){ _scope = scope || 'all' };
-  function getScope(){ return _scope || 'all' };
-
-  // delete all handlers for a given scope
-  function deleteScope(scope){
-    var key, handlers, i;
-
-    for (key in _handlers) {
-      handlers = _handlers[key];
-      for (i = 0; i < handlers.length; ) {
-        if (handlers[i].scope === scope) handlers.splice(i, 1);
-        else i++;
-      }
-    }
-  };
-
-  // cross-browser events
-  function addEvent(object, event, method) {
-    if (object.addEventListener)
-      object.addEventListener(event, method, false);
-    else if(object.attachEvent)
-      object.attachEvent('on'+event, function(){ method(window.event) });
-  };
-
-  // set the handlers globally on document
-  addEvent(document, 'keydown', function(event) { dispatch(event, _scope) }); // Passing _scope to a callback to ensure it remains the same by execution. Fixes #48
-  addEvent(document, 'keyup', clearModifier);
-
-  // reset modifiers to false whenever the window is (re)focused.
-  addEvent(window, 'focus', resetModifiers);
-
-  // store previously defined key
-  var previousKey = global.key;
-
-  // restore previously defined key and return reference to our key object
-  function noConflict() {
-    var k = global.key;
-    global.key = previousKey;
-    return k;
-  }
-
-  // set window.key and window.key.set/get/deleteScope, and the default filter
-  global.key = assignKey;
-  global.key.setScope = setScope;
-  global.key.getScope = getScope;
-  global.key.deleteScope = deleteScope;
-  global.key.filter = filter;
-  global.key.isPressed = isPressed;
-  global.key.getPressedKeyCodes = getPressedKeyCodes;
-  global.key.noConflict = noConflict;
-
-  if(typeof module !== 'undefined') module.exports = global.key;
-
-})(this);
-});
-
-require.define("/node_modules/toolbar/node_modules/inherits/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"./inherits.js"}
-});
-
-require.define("/node_modules/toolbar/node_modules/inherits/inherits.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = inherits
+})()
+},{}],26:[function(require,module,exports){module.exports = inherits
 
 function inherits (c, p, proto) {
   proto = proto || {}
@@ -44886,576 +43510,549 @@ function inherits (c, p, proto) {
 //inherits(Child, Parent)
 //new Child
 
-});
+},{}],45:[function(require,module,exports){var events = require('events');
+var util = require('util');
 
-require.define("/node_modules/toolbar/node_modules/element-class/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
+function Stream() {
+  events.EventEmitter.call(this);
+}
+util.inherits(Stream, events.EventEmitter);
+module.exports = Stream;
+// Backwards-compat with node 0.4.x
+Stream.Stream = Stream;
 
-require.define("/node_modules/toolbar/node_modules/element-class/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = function(opts) {
-  return new ElementClass(opts)
+Stream.prototype.pipe = function(dest, options) {
+  var source = this;
+
+  function ondata(chunk) {
+    if (dest.writable) {
+      if (false === dest.write(chunk) && source.pause) {
+        source.pause();
+      }
+    }
+  }
+
+  source.on('data', ondata);
+
+  function ondrain() {
+    if (source.readable && source.resume) {
+      source.resume();
+    }
+  }
+
+  dest.on('drain', ondrain);
+
+  // If the 'end' option is not supplied, dest.end() will be called when
+  // source gets the 'end' or 'close' events.  Only dest.end() once, and
+  // only when all sources have ended.
+  if (!dest._isStdio && (!options || options.end !== false)) {
+    dest._pipeCount = dest._pipeCount || 0;
+    dest._pipeCount++;
+
+    source.on('end', onend);
+    source.on('close', onclose);
+  }
+
+  var didOnEnd = false;
+  function onend() {
+    if (didOnEnd) return;
+    didOnEnd = true;
+
+    dest._pipeCount--;
+
+    // remove the listeners
+    cleanup();
+
+    if (dest._pipeCount > 0) {
+      // waiting for other incoming streams to end.
+      return;
+    }
+
+    dest.end();
+  }
+
+
+  function onclose() {
+    if (didOnEnd) return;
+    didOnEnd = true;
+
+    dest._pipeCount--;
+
+    // remove the listeners
+    cleanup();
+
+    if (dest._pipeCount > 0) {
+      // waiting for other incoming streams to end.
+      return;
+    }
+
+    dest.destroy();
+  }
+
+  // don't leave dangling pipes when there are errors.
+  function onerror(er) {
+    cleanup();
+    if (this.listeners('error').length === 0) {
+      throw er; // Unhandled stream error in pipe.
+    }
+  }
+
+  source.on('error', onerror);
+  dest.on('error', onerror);
+
+  // remove all the event listeners that were added.
+  function cleanup() {
+    source.removeListener('data', ondata);
+    dest.removeListener('drain', ondrain);
+
+    source.removeListener('end', onend);
+    source.removeListener('close', onclose);
+
+    source.removeListener('error', onerror);
+    dest.removeListener('error', onerror);
+
+    source.removeListener('end', cleanup);
+    source.removeListener('close', cleanup);
+
+    dest.removeListener('end', cleanup);
+    dest.removeListener('close', cleanup);
+  }
+
+  source.on('end', cleanup);
+  source.on('close', cleanup);
+
+  dest.on('end', cleanup);
+  dest.on('close', cleanup);
+
+  dest.emit('pipe', source);
+
+  // Allow for unix-like usage: A.pipe(B).pipe(C)
+  return dest;
+};
+
+},{"events":18,"util":46}],47:[function(require,module,exports){module.exports = Indexer;
+
+function Indexer (opts) {
+    if (!(this instanceof Indexer)) return new Indexer(opts);
+    this.chunkSize = opts.chunkSize;
+    this.cubeSize = opts.cubeSize;
 }
 
-function ElementClass(opts) {
-  if (!(this instanceof ElementClass)) return new ElementClass(opts)
-  var self = this
-  if (!opts) opts = {}
-  if (opts instanceof HTMLElement) opts = {el: opts}
-  this.opts = opts
-  this.el = opts.el || document.body
-  if (typeof this.el !== 'object') this.el = document.querySelector(this.el)
+Indexer.prototype.chunk = function (pos) {
+    var chunkSize = this.chunkSize;
+    var cubeSize = this.cubeSize;
+    var cx = pos.x / cubeSize / chunkSize;
+    var cy = pos.y / cubeSize / chunkSize;
+    var cz = pos.z / cubeSize / chunkSize;
+    var ckey = [ Math.floor(cx), Math.floor(cy), Math.floor(cz) ];
+    return ckey.join('|');
+};
+
+Indexer.prototype.voxel = function (pos) {
+    var size = this.chunkSize;
+    var cubeSize = this.cubeSize;
+    var vx = (size + Math.floor(pos.x / cubeSize) % size) % size;
+    var vy = (size + Math.floor(pos.y / cubeSize) % size) % size;
+    var vz = (size + Math.floor(pos.z / cubeSize) % size) % size;
+    var x = Math.abs(vx);
+    var y = Math.abs(vy);
+    var z = Math.abs(vz);
+    return x + y*size + z*size*size;
+};
+
+},{}],48:[function(require,module,exports){/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+module.exports = function(THREE) {
+  function ClearMaskPass() {
+    if (!(this instanceof ClearMaskPass)) return new ClearMaskPass(scene, camera);
+    this.enabled = true;
+  };
+
+  ClearMaskPass.prototype = {
+    render: function ( renderer, writeBuffer, readBuffer, delta ) {
+      var context = renderer.context;
+      context.disable( context.STENCIL_TEST );
+    }
+  };
+
+  return ClearMaskPass
+};
+},{}],49:[function(require,module,exports){/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+module.exports = function(THREE) {
+  function MaskPass( scene, camera ) {
+    if (!(this instanceof MaskPass)) return new MaskPass(scene, camera);
+
+    this.scene = scene;
+    this.camera = camera;
+
+    this.enabled = true;
+    this.clear = true;
+    this.needsSwap = false;
+
+    this.inverse = false;
+  };
+
+  MaskPass.prototype = {
+
+    render: function ( renderer, writeBuffer, readBuffer, delta ) {
+
+      var context = renderer.context;
+
+      // don't update color or depth
+
+      context.colorMask( false, false, false, false );
+      context.depthMask( false );
+
+      // set up stencil
+
+      var writeValue, clearValue;
+
+      if ( this.inverse ) {
+
+        writeValue = 0;
+        clearValue = 1;
+
+      } else {
+
+        writeValue = 1;
+        clearValue = 0;
+
+      }
+
+      context.enable( context.STENCIL_TEST );
+      context.stencilOp( context.REPLACE, context.REPLACE, context.REPLACE );
+      context.stencilFunc( context.ALWAYS, writeValue, 0xffffffff );
+      context.clearStencil( clearValue );
+
+      // draw into the stencil buffer
+
+      renderer.render( this.scene, this.camera, readBuffer, this.clear );
+      renderer.render( this.scene, this.camera, writeBuffer, this.clear );
+
+      // re-enable update of color and depth
+
+      context.colorMask( true, true, true, true );
+      context.depthMask( true );
+
+      // only render where stencil is set to 1
+
+      context.stencilFunc( context.EQUAL, 1, 0xffffffff );  // draw if == 1
+      context.stencilOp( context.KEEP, context.KEEP, context.KEEP );
+
+    }
+
+  };
+
+  return MaskPass
+};
+
+},{}],50:[function(require,module,exports){/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+module.exports = function(THREE, EffectComposer) {
+  function ShaderPass( shader, textureID ) {
+    if (!(this instanceof ShaderPass)) return new ShaderPass(shader, textureID);
+
+    this.textureID = ( textureID !== undefined ) ? textureID : "tDiffuse";
+
+    this.uniforms = THREE.UniformsUtils.clone( shader.uniforms );
+
+    this.material = new THREE.ShaderMaterial( {
+
+      uniforms: this.uniforms,
+      vertexShader: shader.vertexShader,
+      fragmentShader: shader.fragmentShader
+
+    } );
+
+    this.renderToScreen = false;
+
+    this.enabled = true;
+    this.needsSwap = true;
+    this.clear = false;
+
+  };
+
+  ShaderPass.prototype = {
+
+    render: function ( renderer, writeBuffer, readBuffer, delta ) {
+
+      if ( this.uniforms[ this.textureID ] ) {
+
+        this.uniforms[ this.textureID ].value = readBuffer;
+
+      }
+
+      EffectComposer.quad.material = this.material;
+
+      if ( this.renderToScreen ) {
+
+        renderer.render( EffectComposer.scene, EffectComposer.camera );
+
+      } else {
+
+        renderer.render( EffectComposer.scene, EffectComposer.camera, writeBuffer, this.clear );
+
+      }
+
+    }
+
+  };
+
+  return ShaderPass;
+
+};
+},{}],51:[function(require,module,exports){/**
+ * @author alteredq / http://alteredqualia.com/
+ */
+
+module.exports = function(THREE) {
+  function RenderPass( scene, camera, overrideMaterial, clearColor, clearAlpha ) {
+    if (!(this instanceof RenderPass)) return new RenderPass(scene, camera, overrideMaterial, clearColor, clearAlpha);
+
+    this.scene = scene;
+    this.camera = camera;
+
+    this.overrideMaterial = overrideMaterial;
+
+    this.clearColor = clearColor;
+    this.clearAlpha = ( clearAlpha !== undefined ) ? clearAlpha : 1;
+
+    this.oldClearColor = new THREE.Color();
+    this.oldClearAlpha = 1;
+
+    this.enabled = true;
+    this.clear = true;
+    this.needsSwap = false;
+
+  };
+
+  RenderPass.prototype = {
+
+    render: function ( renderer, writeBuffer, readBuffer, delta ) {
+
+      this.scene.overrideMaterial = this.overrideMaterial;
+
+      if ( this.clearColor ) {
+
+        this.oldClearColor.copy( renderer.getClearColor() );
+        this.oldClearAlpha = renderer.getClearAlpha();
+
+        renderer.setClearColor( this.clearColor, this.clearAlpha );
+
+      }
+
+      renderer.render( this.scene, this.camera, readBuffer, this.clear );
+
+      if ( this.clearColor ) {
+
+        renderer.setClearColor( this.oldClearColor, this.oldClearAlpha );
+
+      }
+
+      this.scene.overrideMaterial = null;
+
+    }
+
+  };
+
+  return RenderPass;
+
+};
+
+},{}],33:[function(require,module,exports){var voxel = require('voxel');
+var ChunkMatrix = require('./lib/chunk_matrix');
+var indexer = require('./lib/indexer');
+
+module.exports = Group;
+
+function Group (game) {
+    if (!(this instanceof Group)) return new Group(game);
+    this.meshes = [];
+    this.chunkMatricies = [];
+    this.game = game;
+    this.indexer = indexer(game);
 }
 
-ElementClass.prototype.add = function(className) {
-  var el = this.el
-  if (!el) return
-  if (el.className === "") return el.className = className
-  var classes = el.className.split(' ')
-  if (classes.indexOf(className) > -1) return classes
-  classes.push(className)
-  el.className = classes.join(' ')
-  return classes
-}
+Group.prototype.create = function (generate) {
+    var self = this;
+    var cm = new ChunkMatrix(self.game, generate);
+    cm.on('add', function (mesh) {
+        self.chunkMatricies[mesh.id] = cm;
+        self.meshes.push(mesh);
+    });
+    cm.on('remove', function (id) {
+        delete self.chunkMatricies[id];
+    });
+    self.chunkMatricies.push(cm);
+    return cm;
+};
+ 
+Group.prototype.createBlock = function (pos, val) {
+    var self = this;
+    var T = self.game.THREE;
+    var size = self.game.cubeSize;
+    
+    var cm = pos.chunkMatrix;
+    var d = pos.direction;
+    
+    var mr = new T.Matrix4().getInverse(cm.rotationObject.matrix);
+    var mt = new T.Matrix4().getInverse(cm.translationObject.matrix);
+    var m = new T.Matrix4().multiply(mr, mt);
+    
+    
+    return (function draw (offset) {
+        var pt = new T.Vector3();
+        pt.copy(pos);
+        
+        pt.x -= d.x * offset;
+        pt.y -= d.y * offset;
+        pt.z -= d.z * offset;
+        offset += size / 8;
+        
+        var tr = m.multiplyVector3(pt);
+        var ci = self.indexer.chunk(tr);
+        var vi = self.indexer.voxel(tr);
+        
+        var value = cm.getByIndex(ci, vi);
+        if (!value) {
+            cm.setByIndex(ci, vi, 3);
+            return true;
+        }
+        else draw(offset + 0.1)
+    })(0)
+};
 
-ElementClass.prototype.remove = function(className) {
-  var el = this.el
-  if (!el) return
-  if (el.className === "") return
-  var classes = el.className.split(' ')
-  var idx = classes.indexOf(className)
-  if (idx > -1) classes.splice(idx, 1)
-  el.className = classes.join(' ')
-  return classes
-}
+Group.prototype.setBlock = function (pos, val) {
+    var ix = this.getIndex(pos);
+    var cm = pos.chunkMatrix;
+    return cm.setByIndex(ix.chunk, ix.voxel, val);
+};
 
-});
+Group.prototype.getBlock = function (pos) {
+    var ix = this.getIndex(pos);
+    var cm = pos.chunkMatrix;
+    return cm.getByIndex(ix.chunk, ix.voxel);
+};
 
-require.define("/node_modules/minecraft-skin/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {}
-});
+Group.prototype.getIndex = function (pos) {
+    var T = this.game.THREE;
+    var cm = pos.chunkMatrix;
+    
+    var mr = new T.Matrix4().getInverse(cm.rotationObject.matrix);
+    var mt = new T.Matrix4().getInverse(cm.translationObject.matrix);
+    var m = new T.Matrix4().multiply(mt, mr);
+    
+    var tr = m.multiplyVector3(pos);
+    var ci = this.indexer.chunk(tr);
+    var vi = this.indexer.voxel(tr);
+    
+    return { chunk: ci, voxel: vi };
+};
 
-require.define("/node_modules/minecraft-skin/index.js",function(require,module,exports,__dirname,__filename,process,global){var THREE
+},{"./lib/chunk_matrix":52,"./lib/indexer":47,"voxel":53}],37:[function(require,module,exports){var ever = require('ever')
+  , vkey = require('vkey')
+  , max = Math.max
 
-module.exports = function(three, image, sizeRatio) {
-  return new Skin(three, image, sizeRatio)
-}
+module.exports = function(el, bindings, state) {
+  if(bindings === undefined || !el.ownerDocument) {
+    state = bindings
+    bindings = el
+    el = this.document.body
+  }
 
-function Skin(three, image, sizeRatio) {
-  THREE = three // hack until three.js fixes multiple instantiation
-  this.sizeRatio = sizeRatio || 8
-  this.createCanvases()
-  this.charMaterial = this.getMaterial(this.skin, false)
-	this.charMaterialTrans = this.getMaterial(this.skin, true)
-  if (typeof image === "string") this.fetchImage(image)
-  if (typeof image === "object") this.setImage(image)
-}
+  var ee = ever(el)
+    , measured = {}
+    , enabled = true
 
-Skin.prototype.createCanvases = function() {
-  this.skinBig = document.createElement('canvas')
-	this.skinBigContext = this.skinBig.getContext('2d')
-	this.skinBig.width = 64 * this.sizeRatio
-	this.skinBig.height = 32 * this.sizeRatio
-  
-  this.skin = document.createElement('canvas')
-	this.skinContext = this.skin.getContext('2d')
-	this.skin.width = 64
-	this.skin.height = 32
-}
+  state = state || {}
 
-Skin.prototype.fetchImage = function(imageURL) {
-  var self = this
-  this.image = new Image()
-  this.image.src = imageURL
-  this.image.onload = function() {
-    self.setImage(self.image)
+  // always initialize the state.
+  for(var key in bindings) {
+    if(bindings[key] === 'enabled' ||
+       bindings[key] === 'enable' ||
+       bindings[key] === 'disable' ||
+       bindings[key] === 'destroy') {
+      throw new Error(bindings[key]+' is reserved')
+    }
+    state[bindings[key]] = 0
+    measured[key] = 1
+  }
+
+  ee.on('keyup', wrapped(onoff(kb, false)))
+  ee.on('keydown', wrapped(onoff(kb, true)))
+  ee.on('mouseup', wrapped(onoff(mouse, false)))
+  ee.on('mousedown', wrapped(onoff(mouse, true)))
+
+  state.enabled = function() {
+    return enabled
+  }
+
+  state.enable = enable_disable(true)
+  state.disable = enable_disable(false)
+  state.destroy = function() {
+    ee.removeAllListeners()
+  } 
+  return state
+
+  function clear() {
+    // always initialize the state.
+    for(var key in bindings) {
+      state[bindings[key]] = 0
+      measured[key] = 1
+    }
+  }
+
+  function enable_disable(on_or_off) {
+    return function() {
+      clear()
+      enabled = on_or_off
+      return this
+    }
+  }
+
+  function wrapped(fn) {
+    return function(ev) {
+      if(enabled) {
+        ev.preventDefault()
+        fn(ev)
+      } else {
+        return
+      }
+    }
+  }
+
+  function onoff(find, on_or_off) {
+    return function(ev) {
+      var key = find(ev)
+        , binding = bindings[key]
+
+      if(binding) {
+        state[binding] += on_or_off ? max(measured[key]--, 0) : -(measured[key] = 1)
+
+        if(!on_or_off && state[binding] < 0) {
+          state[binding] = 0
+        }
+      }
+    }
+  }
+
+  function mouse(ev) {
+    return '<mouse '+ev.which+'>'
+  }
+
+  function kb(ev) {
+    return vkey[ev.keyCode] || ev.char
   }
 }
 
-Skin.prototype.setImage = function (skin) {
-  this.image = skin
-	this.skinContext.clearRect(0, 0, 64, 32);
-	
-	this.skinContext.drawImage(skin, 0, 0);
-	
-	var imgdata = this.skinContext.getImageData(0, 0, 64, 32);
-	var pixels = imgdata.data;
-
-	this.skinBigContext.clearRect(0, 0, this.skinBig.width, this.skinBig.height);
-	this.skinBigContext.save();
-	
-	var isOnecolor = true;
-	
-	var colorCheckAgainst = [40, 0];
-	var colorIndex = (colorCheckAgainst[0]+colorCheckAgainst[1]*64)*4;
-	
-	var isPixelDifferent = function (x, y) {
-		if(pixels[(x+y*64)*4+0] !== pixels[colorIndex+0] || pixels[(x+y*64)*4+1] !== pixels[colorIndex+1] || pixels[(x+y*64)*4+2] !== pixels[colorIndex+2] || pixels[(x+y*64)*4+3] !== pixels[colorIndex+3]) {
-			return true;
-		}
-		return false;
-	};
-	
-	// Check if helmet/hat is a solid color
-	// Bottom row
-	for(var i=32; i < 64; i+=1) {
-		for(var j=8; j < 16; j+=1) {
-			if(isPixelDifferent(i, j)) {
-				isOnecolor = false;
-				break;
-			}
-		}
-		if(!isOnecolor) {
-			break;
-		}
-	}
-	if(!isOnecolor) {
-		// Top row
-		for(var i=40; i < 56; i+=1) {
-			for(var j=0; j < 8; j+=1) {
-				if(isPixelDifferent(i, j)) {
-					isOnecolor = false;
-					break;
-				}
-			}
-			if(!isOnecolor) {
-				break;
-			}
-			
-		}
-	}
-	
-	for(var i=0; i < 64; i+=1) {
-	  for(var j=0; j < 32; j+=1) {
-  	  if(isOnecolor && ((i >= 32 && i < 64 && j >= 8 && j < 16) || (i >= 40 && i < 56 && j >= 0 && j < 8))) {
-  			pixels[(i+j*64)*4+3] = 0
-  		}
-  		this.skinBigContext.fillStyle = 'rgba('+pixels[(i+j*64)*4+0]+', '+pixels[(i+j*64)*4+1]+', '+pixels[(i+j*64)*4+2]+', '+pixels[(i+j*64)*4+3]/255+')';
-  		this.skinBigContext.fillRect(i * this.sizeRatio, j * this.sizeRatio, this.sizeRatio, this.sizeRatio);
-  	}
-	}
-  
-	this.skinBigContext.restore();
-	
-	this.skinContext.putImageData(imgdata, 0, 0);
-	
-  this.charMaterial.map.needsUpdate = true;
-  this.charMaterialTrans.map.needsUpdate = true;
-  
-  document.body.appendChild(this.skinBig);
-	
-};
-
-Skin.prototype.getMaterial = function(img, transparent) {
-	var texture		= new THREE.Texture(img);
-	texture.magFilter	= THREE.NearestFilter;
-	texture.minFilter	= THREE.NearestFilter;
-	texture.format		= transparent ? THREE.RGBAFormat : THREE.RGBFormat;
-	texture.needsUpdate	= true;
-	var material	= new THREE.MeshBasicMaterial({
-		map		: texture,
-		transparent	: transparent ? true : false
-	});
-	return material;
-}
-
-Skin.prototype.UVMap = function(mesh, face, x, y, w, h, rotateBy) {
-	if (!rotateBy) rotateBy = 0;
-	var uvs = mesh.geometry.faceVertexUvs[0][face];
-	var tileU = x;
-	var tileV = y;
-	var tileUvWidth = 1/64;
-	var tileUvHeight = 1/32;
-  uvs[ (0 + rotateBy) % 4 ].x = (tileU * tileUvWidth)
-  uvs[ (0 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight)
-  uvs[ (1 + rotateBy) % 4 ].x = (tileU * tileUvWidth)
-  uvs[ (1 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight + h * tileUvHeight)
-  uvs[ (2 + rotateBy) % 4 ].x = (tileU * tileUvWidth + w * tileUvWidth)
-  uvs[ (2 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight + h * tileUvHeight)
-  uvs[ (3 + rotateBy) % 4 ].x = (tileU * tileUvWidth + w * tileUvWidth)
-  uvs[ (3 + rotateBy) % 4 ].y = 1 - (tileV * tileUvHeight)
-}
-
-Skin.prototype.cubeFromPlanes = function (size, mat) {
-	var cube = new THREE.Object3D();
-	var meshes = [];
-	for(var i=0; i < 6; i++) {
-		var mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
-		mesh.doubleSided = true;
-		cube.add(mesh);
-		meshes.push(mesh);
-	}
-	// Front
-	meshes[0].rotation.x = Math.PI/2;
-	meshes[0].rotation.z = -Math.PI/2;
-	meshes[0].position.x = size/2;
-	
-	// Back
-	meshes[1].rotation.x = Math.PI/2;
-	meshes[1].rotation.z = Math.PI/2;
-	meshes[1].position.x = -size/2;
-	
-	// Top
-	meshes[2].position.y = size/2;
-	
-	// Bottom
-	meshes[3].rotation.y = Math.PI;
-	meshes[3].rotation.z = Math.PI;
-	meshes[3].position.y = -size/2;
-	
-	// Left
-	meshes[4].rotation.x = Math.PI/2;
-	meshes[4].position.z = size/2;
-	
-	// Right
-	meshes[5].rotation.x = -Math.PI/2;
-	meshes[5].rotation.y = Math.PI;
-	meshes[5].position.z = -size/2;
-	
-	return cube;
-}
-
-Skin.prototype.createPlayerObject = function(scene) {
-  var headgroup = new THREE.Object3D();
-	var upperbody = new THREE.Object3D();
-	
-	// Left leg
-	var leftleggeo = new THREE.CubeGeometry(4, 12, 4);
-	for(var i=0; i < 8; i+=1) {
-		leftleggeo.vertices[i].y -= 6;
-	}
-	var leftleg = new THREE.Mesh(leftleggeo, this.charMaterial);
-	leftleg.position.z = -2;
-	leftleg.position.y = -6;
-	this.UVMap(leftleg, 0, 8, 20, -4, 12);
-	this.UVMap(leftleg, 1, 16, 20, -4, 12);
-	this.UVMap(leftleg, 2, 4, 16, 4, 4, 3);
-	this.UVMap(leftleg, 3, 8, 20, 4, -4, 1);
-	this.UVMap(leftleg, 4, 12, 20, -4, 12);
-	this.UVMap(leftleg, 5, 4, 20, -4, 12);
-
-	// Right leg
-	var rightleggeo = new THREE.CubeGeometry(4, 12, 4);
-	for(var i=0; i < 8; i+=1) {
-		rightleggeo.vertices[i].y -= 6;
-	}
-	var rightleg = new THREE.Mesh(rightleggeo, this.charMaterial);
-	rightleg.position.z = 2;
-	rightleg.position.y = -6;
-  this.UVMap(rightleg, 0, 4, 20, 4, 12);
-  this.UVMap(rightleg, 1, 12, 20, 4, 12);
-  this.UVMap(rightleg, 2, 8, 16, -4, 4, 3);
-  this.UVMap(rightleg, 3, 12, 20, -4, -4, 1);
-  this.UVMap(rightleg, 4, 0, 20, 4, 12);
-  this.UVMap(rightleg, 5, 8, 20, 4, 12);
-	
-	// Body
-	var bodygeo = new THREE.CubeGeometry(4, 12, 8);
-	var bodymesh = new THREE.Mesh(bodygeo, this.charMaterial);
-	this.UVMap(bodymesh, 0, 20, 20, 8, 12);
-	this.UVMap(bodymesh, 1, 32, 20, 8, 12);
-	this.UVMap(bodymesh, 2, 20, 16, 8, 4, 1);
-	this.UVMap(bodymesh, 3, 28, 16, 8, 4, 3);
-	this.UVMap(bodymesh, 4, 16, 20, 4, 12);
-	this.UVMap(bodymesh, 5, 28, 20, 4, 12);
-	upperbody.add(bodymesh);
-	
-	
-	// Left arm
-	var leftarmgeo = new THREE.CubeGeometry(4, 12, 4);
-	for(var i=0; i < 8; i+=1) {
-		leftarmgeo.vertices[i].y -= 4;
-	}
-	var leftarm = new THREE.Mesh(leftarmgeo, this.charMaterial);
-	leftarm.position.z = -6;
-	leftarm.position.y = 4;
-	leftarm.rotation.x = Math.PI/32;
-	this.UVMap(leftarm, 0, 48, 20, -4, 12);
-	this.UVMap(leftarm, 1, 56, 20, -4, 12);
-	this.UVMap(leftarm, 2, 48, 16, -4, 4, 1);
-	this.UVMap(leftarm, 3, 52, 16, -4, 4, 3);
-	this.UVMap(leftarm, 4, 52, 20, -4, 12);
-	this.UVMap(leftarm, 5, 44, 20, -4, 12);
-	upperbody.add(leftarm);
-	
-	// Right arm
-	var rightarmgeo = new THREE.CubeGeometry(4, 12, 4);
-	for(var i=0; i < 8; i+=1) {
-		rightarmgeo.vertices[i].y -= 4;
-	}
-	var rightarm = new THREE.Mesh(rightarmgeo, this.charMaterial);
-	rightarm.position.z = 6;
-	rightarm.position.y = 4;
-	rightarm.rotation.x = -Math.PI/32;
-	this.UVMap(rightarm, 0, 44, 20, 4, 12);
-	this.UVMap(rightarm, 1, 52, 20, 4, 12);
-	this.UVMap(rightarm, 2, 44, 16, 4, 4, 1);
-	this.UVMap(rightarm, 3, 48, 16, 4, 4, 3);
-	this.UVMap(rightarm, 4, 40, 20, 4, 12);
-	this.UVMap(rightarm, 5, 48, 20, 4, 12);
-	upperbody.add(rightarm);
-	
-	//Head
-	var headgeo = new THREE.CubeGeometry(8, 8, 8);
-	var headmesh = new THREE.Mesh(headgeo, this.charMaterial);
-	headmesh.position.y = 2;
-	this.UVMap(headmesh, 0, 8, 8, 8, 8);
-	this.UVMap(headmesh, 1, 24, 8, 8, 8);
-	
-	this.UVMap(headmesh, 2, 8, 0, 8, 8, 1);
-	this.UVMap(headmesh, 3, 16, 0, 8, 8, 3);
-	
-	this.UVMap(headmesh, 4, 0, 8, 8, 8);
-	this.UVMap(headmesh, 5, 16, 8, 8, 8);
-	headgroup.add(headmesh);
-
-	var helmet = this.cubeFromPlanes(9, this.charMaterialTrans);
-	helmet.position.y = 2;
-	this.UVMap(helmet.children[0], 0, 32+8, 8, 8, 8);
-	this.UVMap(helmet.children[1], 0, 32+24, 8, 8, 8);
-	this.UVMap(helmet.children[2], 0, 32+8, 0, 8, 8, 1);
-	this.UVMap(helmet.children[3], 0, 32+16, 0, 8, 8, 3);
-	this.UVMap(helmet.children[4], 0, 32+0, 8, 8, 8);
-	this.UVMap(helmet.children[5], 0, 32+16, 8, 8, 8);
-	
-	headgroup.add(helmet);
-	
-	var ears = new THREE.Object3D();
-	
-	var eargeo = new THREE.CubeGeometry(1, (9/8)*6, (9/8)*6);
-	var leftear = new THREE.Mesh(eargeo, this.charMaterial);
-	var rightear = new THREE.Mesh(eargeo, this.charMaterial);
-	
-	leftear.position.y = 2+(9/8)*5;
-	rightear.position.y = 2+(9/8)*5;
-	leftear.position.z = -(9/8)*5;
-	rightear.position.z = (9/8)*5;
-	
-	// Right ear share same geometry, same uv-maps
-	
-	this.UVMap(leftear, 0, 25, 1, 6, 6); // Front side
-	this.UVMap(leftear, 1, 32, 1, 6, 6); // Back side
-	
-	this.UVMap(leftear, 2, 25, 0, 6, 1, 1); // Top edge
-	this.UVMap(leftear, 3, 31, 0, 6, 1, 1); // Bottom edge
-	
-	this.UVMap(leftear, 4, 24, 1, 1, 6); // Left edge
-	this.UVMap(leftear, 5, 31, 1, 1, 6); // Right edge
-	
-	ears.add(leftear);
-	ears.add(rightear);
-	
-	leftear.visible = rightear.visible = false;
-	
-	headgroup.add(ears);
-	headgroup.position.y = 8;
-	
-	var playerModel = new THREE.Object3D();
-	
-	playerModel.add(leftleg);
-	playerModel.add(rightleg);
-	
-	playerModel.add(upperbody);
-	playerModel.add(headgroup);
-	
-	playerModel.position.y = 6;
-	
-	var playerGroup = new THREE.Object3D();
-	
-	playerGroup.add(playerModel);
-	return playerGroup
-}
-});
-
-require.define("/node_modules/voxel-debris/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-debris/index.js",function(require,module,exports,__dirname,__filename,process,global){var funstance = require('funstance');
-var EventEmitter = require('events').EventEmitter;
-
-module.exports = function (game, opts) {
-    if (!opts) opts = {};
-    if (!opts.limit) opts.limit = function () { return false };
-    if (opts.yield === undefined) opts.yield = 4;
-    if (typeof opts.yield !== 'function') {
-        opts.yield = (function (y) {
-            return function () { return y };
-        })(opts.yield);
-    }
-    
-    if (!opts.expire) opts.expire = {};
-    if (typeof opts.expire === 'number') {
-        opts.expire = { start : opts.expire, end : opts.expire };
-    }
-    if (!opts.expire.start) opts.expire.start = 15 * 1000;
-    if (!opts.expire.end) opts.expire.end = 30 * 1000;
-    if (!opts.power) opts.power = 1
-    
-    game.on('collision', function (item) {
-        if (!item._debris) return;
-        if (opts.limit && opts.limit(item)) return;
-        
-        game.removeItem(item);
-        item._collected = true;
-        em.emit('collect', item);
-    });
-    
-    var em = new EventEmitter;
-    return funstance(em, function (pos) {
-        var value = game.getBlock(pos);
-        if (value === 0) return;
-        game.setBlock(pos, 0);
-        
-        for (var i = 0; i < opts.yield(value); i++) {
-            var item = createDebris(game, pos, value);
-            item.velocity = {
-                x: (Math.random() * 2 - 1) * 0.05 * opts.power,
-                y: (Math.random() * 2 - 1) * 0.05 * opts.power,
-                z: (Math.random() * 2 - 1) * 0.05 * opts.power
-            };
-            game.addItem(item);
-            
-            var time = opts.expire.start + Math.random()
-                * (opts.expire.end - opts.expire.start);
-            
-            setTimeout(function (item) {
-                game.removeItem(item);
-                if (!item._collected) em.emit('expire', item);
-            }, time, item);
-        }
-    });
-}
-
-function createDebris (game, pos, value) {
-    var mesh = new game.THREE.Mesh(
-        new game.THREE.CubeGeometry(4, 4, 4),
-        game.material
-    );
-    mesh.geometry.faces.forEach(function (face) {
-        face.materialIndex = value - 1
-    });
-    mesh.translateX(pos.x);
-    mesh.translateY(pos.y);
-    mesh.translateZ(pos.z);
-    
-    return {
-        mesh: mesh,
-        size: 4,
-        collisionRadius: 22,
-        value: value,
-        _debris: true,
-        velocity: {
-            x: (Math.random() * 2 - 1) * 0.05,
-            y: (Math.random() * 2 - 1) * 0.05,
-            z: (Math.random() * 2 - 1) * 0.05
-        }
-    };
-}
-
-});
-
-require.define("/node_modules/voxel-debris/node_modules/funstance/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-debris/node_modules/funstance/index.js",function(require,module,exports,__dirname,__filename,process,global){var global = (function(){ return this; })()
-
-module.exports = function(obj, fn) {
-    var f = function () {
-        if (typeof fn !== 'function') return;
-        return fn.apply(this === global || typeof this === 'undefined' ? obj : this, arguments);
-    };
-
-    function C () {}
-    C.prototype = Object.getPrototypeOf(obj);
-    f.__proto__ = new C;
-
-    Object.getOwnPropertyNames(Function.prototype).forEach(function (key) {
-        if (f[key] === undefined) {
-            f.__proto__[key] = Function.prototype[key];
-        }
-    });
-
-    Object.getOwnPropertyNames(obj).forEach(function (key) {
-        f[key] = obj[key];
-    });
-
-    return f;
-};
-});
-
-require.define("/node_modules/voxel-pp/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-pp/index.js",function(require,module,exports,__dirname,__filename,process,global){module.exports = function(game) {
-  var THREE = game.THREE
-    , EffectComposer = require('three-effectcomposer')(THREE)
-    , used = false
-    , composer
-
-  game.render = function render() {
-    return used ? composer.composer.render() : game.renderer.render(game.scene, game.camera)
-  };
-
-  function Composer() {
-    var composer = this.composer = new EffectComposer(game.renderer)
-    composer.passes.push(new EffectComposer.RenderPass(game.scene, game.camera))
-
-    this.passes = composer.passes
-    this.updateRenderToScreen()
-  };
-
-  Composer.prototype.use = function(params) {
-    params = params || {}
-    if (typeof params === 'string') params = {
-      fragmentShader: params
-    }
-
-    params.fragmentShader = params.fragmentShader || EffectComposer.CopyShader.fragmentShader
-    params.vertexShader = params.vertexShader || EffectComposer.CopyShader.vertexShader
-    params.uniforms = THREE.UniformsUtils.merge([ EffectComposer.CopyShader.uniforms, params.uniforms || {} ])
-
-    this.passes.push(new EffectComposer.ShaderPass(params))
-    this.updateRenderToScreen()
-
-    return this
-  };
-
-  Composer.prototype.addPass = function(pass, params) {
-    if (typeof pass === 'string') {
-      pass = EffectComposer[pass].apply(this, [].slice.call(arguments, 1))
-    }
-    this.composer.addPass(pass)
-    this.updateRenderToScreen()
-
-    return pass
-  };
-
-  Composer.prototype.updateRenderToScreen = function() {
-    used = this.passes.length > 1
-    this.passes.slice(0, -1).forEach(function(pass) {
-      pass.renderToScreen = false
-    })
-    this.passes.slice(-1).forEach(function(pass) {
-      pass.renderToScreen = true
-    })
-  };
-
-  Composer.prototype.EffectComposer = EffectComposer
-  Composer.prototype.ClearMaskPass = EffectComposer.ClearMaskPass
-  Composer.prototype.CopyShader = EffectComposer.CopyShader
-  Composer.prototype.ShaderPass = EffectComposer.ShaderPass
-  Composer.prototype.RenderPass = EffectComposer.RenderPass
-  Composer.prototype.MaskPass = EffectComposer.MaskPass
-  Composer.prototype.THREE = THREE
-
-  composer = new Composer
-
-  return composer
-};
-
-});
-
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/index.js",function(require,module,exports,__dirname,__filename,process,global){/**
+},{"ever":54,"vkey":55}],20:[function(require,module,exports){/**
  * @author alteredq / http://alteredqualia.com/
  */
 
@@ -45601,12 +44198,251 @@ module.exports = function(THREE) {
 
   return EffectComposer
 };
-});
+},{"./lib/renderpass":51,"./lib/shaderpass":50,"./lib/maskpass":49,"./lib/clearmaskpass":48,"three-copyshader":56}],44:[function(require,module,exports){var lock = require('pointer-lock')
+  , drag = require('drag-stream')
+  , full = require('fullscreen')
 
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/node_modules/three-copyshader/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
+var EE = require('events').EventEmitter
+  , Stream = require('stream').Stream
 
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/node_modules/three-copyshader/index.js",function(require,module,exports,__dirname,__filename,process,global){/**
+module.exports = interact
+
+function interact(el, skiplock) {
+  var ee = new EE
+    , internal
+
+  if(!lock.available() || skiplock) {
+    internal = usedrag(el)
+  } else {
+    internal = uselock(el, politelydeclined)
+  }
+
+  ee.release = function() { internal.release && internal.release() }
+  ee.request = function() { internal.request && internal.request() }
+  ee.destroy = function() { internal.destroy && internal.destroy() }
+  ee.pointerAvailable = function() { return lock.available() }
+  ee.fullscreenAvailable = function() { return full.available() }
+
+  forward()
+
+  return ee
+
+  function politelydeclined() {
+    ee.emit('opt-out')
+    internal.destroy()
+    internal = usedrag(el)
+    forward()
+  }
+
+  function forward() {
+    internal.on('attain', function(stream) {
+      ee.emit('attain', stream)
+    })
+
+    internal.on('release', function() {
+      ee.emit('release')
+    })
+  }
+}
+
+function uselock(el, declined) {
+  var pointer = lock(el)
+    , fs = full(el)
+
+  pointer.on('needs-fullscreen', function() {
+    fs.once('attain', function() {
+      pointer.request()
+    })
+    fs.request()
+  })
+
+  pointer.on('error', declined)
+
+  return pointer
+}
+
+function usedrag(el) {
+  var ee = new EE
+    , d = drag(el)
+    , stream
+
+  d.paused = true
+
+  d.on('resume', function() {
+    stream = new Stream
+    stream.readable = true
+    stream.initial = null
+  })
+
+  d.on('data', function(datum) {
+    if(!stream) {
+      stream = new Stream
+      stream.readable = true
+      stream.initial = null
+    }
+
+    if(!stream.initial) {
+      stream.initial = {
+        x: datum.dx
+      , y: datum.dy
+      , t: datum.dt
+      }
+      return ee.emit('attain', stream)
+    }
+
+    if(stream.paused) {
+      ee.emit('release')
+      stream.emit('end')
+      stream.readable = false
+      stream.emit('close')
+      stream = null
+    }
+
+    stream.emit('data', datum)
+  })
+
+  return ee
+}
+
+},{"events":18,"stream":45,"drag-stream":57,"fullscreen":58,"pointer-lock":59}],55:[function(require,module,exports){(function(){var ua = typeof window !== 'undefined' ? window.navigator.userAgent : ''
+  , isOSX = /OS X/.test(ua)
+  , isOpera = /Opera/.test(ua)
+  , maybeFirefox = !/like Gecko/.test(ua) && !isOpera
+
+var i, output = module.exports = {
+  0:  isOSX ? '<menu>' : '<UNK>'
+, 1:  '<mouse 1>'
+, 2:  '<mouse 2>'
+, 3:  '<break>'
+, 4:  '<mouse 3>'
+, 5:  '<mouse 4>'
+, 6:  '<mouse 5>'
+, 8:  '<backspace>'
+, 9:  '<tab>'
+, 12: '<clear>'
+, 13: '<enter>'
+, 16: '<shift>'
+, 17: '<control>'
+, 18: '<alt>'
+, 19: '<pause>'
+, 20: '<caps-lock>'
+, 21: '<ime-hangul>'
+, 23: '<ime-junja>'
+, 24: '<ime-final>'
+, 25: '<ime-kanji>'
+, 27: '<escape>'
+, 28: '<ime-convert>'
+, 29: '<ime-nonconvert>'
+, 30: '<ime-accept>'
+, 31: '<ime-mode-change>'
+, 27: '<escape>'
+, 32: '<space>'
+, 33: '<page-up>'
+, 34: '<page-down>'
+, 35: '<end>'
+, 36: '<home>'
+, 37: '<left>'
+, 38: '<up>'
+, 39: '<right>'
+, 40: '<down>'
+, 41: '<select>'
+, 42: '<print>'
+, 43: '<execute>'
+, 44: '<snapshot>'
+, 45: '<insert>'
+, 46: '<delete>'
+, 47: '<help>'
+, 91: '<meta>'  // meta-left -- no one handles left and right properly, so we coerce into one.
+, 92: '<meta>'  // meta-right
+, 93: isOSX ? '<meta>' : '<menu>'      // chrome,opera,safari all report this for meta-right (osx mbp).
+, 95: '<sleep>'
+, 106: '<num-*>'
+, 107: '<num-+>'
+, 108: '<num-enter>'
+, 109: '<num-->'
+, 110: '<num-.>'
+, 111: '<num-/>'
+, 144: '<num-lock>'
+, 145: '<scroll-lock>'
+, 160: '<shift-left>'
+, 161: '<shift-right>'
+, 162: '<control-left>'
+, 163: '<control-right>'
+, 164: '<alt-left>'
+, 165: '<alt-right>'
+, 166: '<browser-back>'
+, 167: '<browser-forward>'
+, 168: '<browser-refresh>'
+, 169: '<browser-stop>'
+, 170: '<browser-search>'
+, 171: '<browser-favorites>'
+, 172: '<browser-home>'
+
+  // ff/osx reports '<volume-mute>' for '-'
+, 173: isOSX && maybeFirefox ? '-' : '<volume-mute>'
+, 174: '<volume-down>'
+, 175: '<volume-up>'
+, 176: '<next-track>'
+, 177: '<prev-track>'
+, 178: '<stop>'
+, 179: '<play-pause>'
+, 180: '<launch-mail>'
+, 181: '<launch-media-select>'
+, 182: '<launch-app 1>'
+, 183: '<launch-app 2>'
+, 186: ';'
+, 187: '='
+, 188: ','
+, 189: '-'
+, 190: '.'
+, 191: '/'
+, 192: '`'
+, 219: '['
+, 220: '\\'
+, 221: ']'
+, 222: "'"
+, 223: '<meta>'
+, 224: '<meta>'       // firefox reports meta here.
+, 226: '<alt-gr>'
+, 229: '<ime-process>'
+, 231: isOpera ? '`' : '<unicode>'
+, 246: '<attention>'
+, 247: '<crsel>'
+, 248: '<exsel>'
+, 249: '<erase-eof>'
+, 250: '<play>'
+, 251: '<zoom>'
+, 252: '<no-name>'
+, 253: '<pa-1>'
+, 254: '<clear>'
+}
+
+for(i = 58; i < 65; ++i) {
+  output[i] = String.fromCharCode(i)
+}
+
+// 0-9
+for(i = 48; i < 58; ++i) {
+  output[i] = (i - 48)+''
+}
+
+// A-Z
+for(i = 65; i < 91; ++i) {
+  output[i] = String.fromCharCode(i)
+}
+
+// num0-9
+for(i = 96; i < 107; ++i) {
+  output[i] = '<num-'+(i - 96)+'>'
+}
+
+// F1-F24
+for(i = 112; i < 136; ++i) {
+  output[i] = 'F'+(i-111)
+}
+
+})()
+},{}],56:[function(require,module,exports){/**
  * @author alteredq / http://alteredqualia.com/
  *
  * Full-screen textured quad shader
@@ -45643,578 +44479,2958 @@ module.exports = {
   ].join("\n")
 };
 
-});
+},{}],32:[function(require,module,exports){var THREE = require('three')
 
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/lib/renderpass.js",function(require,module,exports,__dirname,__filename,process,global){/**
- * @author alteredq / http://alteredqualia.com/
- */
+module.exports = function(data, scaleFactor, mesher) {
+  return new Mesh(data, scaleFactor, mesher)
+}
 
-module.exports = function(THREE) {
-  function RenderPass( scene, camera, overrideMaterial, clearColor, clearAlpha ) {
-    if (!(this instanceof RenderPass)) return new RenderPass(scene, camera, overrideMaterial, clearColor, clearAlpha);
+module.exports.Mesh = Mesh
 
-    this.scene = scene;
-    this.camera = camera;
+function Mesh(data, mesher, scaleFactor) {
+  this.data = data
+  var geometry = this.geometry = new THREE.Geometry()
+  this.scale = scaleFactor || new THREE.Vector3(10, 10, 10)
+  
+  var result = mesher( data.voxels, data.dims )
+  this.meshed = result
 
-    this.overrideMaterial = overrideMaterial;
+  geometry.vertices.length = 0
+  geometry.faces.length = 0
 
-    this.clearColor = clearColor;
-    this.clearAlpha = ( clearAlpha !== undefined ) ? clearAlpha : 1;
-
-    this.oldClearColor = new THREE.Color();
-    this.oldClearAlpha = 1;
-
-    this.enabled = true;
-    this.clear = true;
-    this.needsSwap = false;
-
-  };
-
-  RenderPass.prototype = {
-
-    render: function ( renderer, writeBuffer, readBuffer, delta ) {
-
-      this.scene.overrideMaterial = this.overrideMaterial;
-
-      if ( this.clearColor ) {
-
-        this.oldClearColor.copy( renderer.getClearColor() );
-        this.oldClearAlpha = renderer.getClearAlpha();
-
-        renderer.setClearColor( this.clearColor, this.clearAlpha );
-
-      }
-
-      renderer.render( this.scene, this.camera, readBuffer, this.clear );
-
-      if ( this.clearColor ) {
-
-        renderer.setClearColor( this.oldClearColor, this.oldClearAlpha );
-
-      }
-
-      this.scene.overrideMaterial = null;
-
+  for (var i = 0; i < result.vertices.length; ++i) {
+    var q = result.vertices[i]
+    geometry.vertices.push(new THREE.Vector3(q[0], q[1], q[2]))
+  } 
+  
+  for (var i = 0; i < result.faces.length; ++i) {
+    geometry.faceVertexUvs[0].push(this.faceVertexUv(i))
+    
+    var q = result.faces[i]
+    if (q.length === 5) {
+      var f = new THREE.Face4(q[0], q[1], q[2], q[3])
+      f.color = new THREE.Color(q[4])
+      f.vertexColors = [f.color,f.color,f.color,f.color]
+      geometry.faces.push(f)
+    } else if (q.length == 4) {
+      var f = new THREE.Face3(q[0], q[1], q[2])
+      f.color = new THREE.Color(q[3])
+      f.vertexColors = [f.color,f.color,f.color]
+      geometry.faces.push(f)
     }
+  }
+  
+  geometry.computeFaceNormals()
 
-  };
+  geometry.verticesNeedUpdate = true
+  geometry.elementsNeedUpdate = true
+  geometry.normalsNeedUpdate = true
 
-  return RenderPass;
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
 
-};
+}
 
-});
+Mesh.prototype.createWireMesh = function(hexColor) {    
+  var wireMaterial = new THREE.MeshBasicMaterial({
+    color : hexColor || 0xffffff,
+    wireframe : true
+  })
+  wireMesh = new THREE.Mesh(this.geometry, wireMaterial)
+  wireMesh.scale = this.scale
+  wireMesh.doubleSided = true
+  this.wireMesh = wireMesh
+  return wireMesh
+}
 
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/lib/shaderpass.js",function(require,module,exports,__dirname,__filename,process,global){/**
- * @author alteredq / http://alteredqualia.com/
- */
+Mesh.prototype.createSurfaceMesh = function(material) {
+  material = material || new THREE.MeshNormalMaterial()
+  var surfaceMesh  = new THREE.Mesh( this.geometry, material )
+  surfaceMesh.scale = this.scale
+  surfaceMesh.doubleSided = false
+  this.surfaceMesh = surfaceMesh
+  return surfaceMesh
+}
 
-module.exports = function(THREE, EffectComposer) {
-  function ShaderPass( shader, textureID ) {
-    if (!(this instanceof ShaderPass)) return new ShaderPass(shader, textureID);
+Mesh.prototype.addToScene = function(scene) {
+  if (this.wireMesh) scene.add( this.wireMesh )
+  if (this.surfaceMesh) scene.add( this.surfaceMesh )
+}
 
-    this.textureID = ( textureID !== undefined ) ? textureID : "tDiffuse";
+Mesh.prototype.setPosition = function(x, y, z) {
+  if (this.wireMesh) this.wireMesh.position = new THREE.Vector3(x, y, z)
+  if (this.surfaceMesh) this.surfaceMesh.position = new THREE.Vector3(x, y, z)
+}
 
-    this.uniforms = THREE.UniformsUtils.clone( shader.uniforms );
-
-    this.material = new THREE.ShaderMaterial( {
-
-      uniforms: this.uniforms,
-      vertexShader: shader.vertexShader,
-      fragmentShader: shader.fragmentShader
-
-    } );
-
-    this.renderToScreen = false;
-
-    this.enabled = true;
-    this.needsSwap = true;
-    this.clear = false;
-
-  };
-
-  ShaderPass.prototype = {
-
-    render: function ( renderer, writeBuffer, readBuffer, delta ) {
-
-      if ( this.uniforms[ this.textureID ] ) {
-
-        this.uniforms[ this.textureID ].value = readBuffer;
-
-      }
-
-      EffectComposer.quad.material = this.material;
-
-      if ( this.renderToScreen ) {
-
-        renderer.render( EffectComposer.scene, EffectComposer.camera );
-
-      } else {
-
-        renderer.render( EffectComposer.scene, EffectComposer.camera, writeBuffer, this.clear );
-
-      }
-
+Mesh.prototype.faceVertexUv = function(i) {
+  var vs = [
+    this.meshed.vertices[i*4+0],
+    this.meshed.vertices[i*4+1],
+    this.meshed.vertices[i*4+2],
+    this.meshed.vertices[i*4+3]
+  ]
+  var spans = {
+    x0: vs[0][0] - vs[1][0],
+    x1: vs[1][0] - vs[2][0],
+    y0: vs[0][1] - vs[1][1],
+    y1: vs[1][1] - vs[2][1],
+    z0: vs[0][2] - vs[1][2],
+    z1: vs[1][2] - vs[2][2]
+  }
+  var size = {
+    x: Math.max(Math.abs(spans.x0), Math.abs(spans.x1)),
+    y: Math.max(Math.abs(spans.y0), Math.abs(spans.y1)),
+    z: Math.max(Math.abs(spans.z0), Math.abs(spans.z1))
+  }
+  if (size.x === 0) {
+    if (spans.y0 > spans.y1) {
+      var width = size.y
+      var height = size.z
     }
-
-  };
-
-  return ShaderPass;
-
-};
-});
-
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/lib/maskpass.js",function(require,module,exports,__dirname,__filename,process,global){/**
- * @author alteredq / http://alteredqualia.com/
- */
-
-module.exports = function(THREE) {
-  function MaskPass( scene, camera ) {
-    if (!(this instanceof MaskPass)) return new MaskPass(scene, camera);
-
-    this.scene = scene;
-    this.camera = camera;
-
-    this.enabled = true;
-    this.clear = true;
-    this.needsSwap = false;
-
-    this.inverse = false;
-  };
-
-  MaskPass.prototype = {
-
-    render: function ( renderer, writeBuffer, readBuffer, delta ) {
-
-      var context = renderer.context;
-
-      // don't update color or depth
-
-      context.colorMask( false, false, false, false );
-      context.depthMask( false );
-
-      // set up stencil
-
-      var writeValue, clearValue;
-
-      if ( this.inverse ) {
-
-        writeValue = 0;
-        clearValue = 1;
-
-      } else {
-
-        writeValue = 1;
-        clearValue = 0;
-
-      }
-
-      context.enable( context.STENCIL_TEST );
-      context.stencilOp( context.REPLACE, context.REPLACE, context.REPLACE );
-      context.stencilFunc( context.ALWAYS, writeValue, 0xffffffff );
-      context.clearStencil( clearValue );
-
-      // draw into the stencil buffer
-
-      renderer.render( this.scene, this.camera, readBuffer, this.clear );
-      renderer.render( this.scene, this.camera, writeBuffer, this.clear );
-
-      // re-enable update of color and depth
-
-      context.colorMask( true, true, true, true );
-      context.depthMask( true );
-
-      // only render where stencil is set to 1
-
-      context.stencilFunc( context.EQUAL, 1, 0xffffffff );  // draw if == 1
-      context.stencilOp( context.KEEP, context.KEEP, context.KEEP );
-
+    else {
+      var width = size.z
+      var height = size.y
     }
-
-  };
-
-  return MaskPass
-};
-
-});
-
-require.define("/node_modules/voxel-pp/node_modules/three-effectcomposer/lib/clearmaskpass.js",function(require,module,exports,__dirname,__filename,process,global){/**
- * @author alteredq / http://alteredqualia.com/
- */
-
-module.exports = function(THREE) {
-  function ClearMaskPass() {
-    if (!(this instanceof ClearMaskPass)) return new ClearMaskPass(scene, camera);
-    this.enabled = true;
-  };
-
-  ClearMaskPass.prototype = {
-    render: function ( renderer, writeBuffer, readBuffer, delta ) {
-      var context = renderer.context;
-      context.disable( context.STENCIL_TEST );
+  }
+  if (size.y === 0) {
+    if (spans.x0 > spans.x1) {
+      var width = size.x
+      var height = size.z
     }
-  };
-
-  return ClearMaskPass
-};
-});
-
-require.define("/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/index.js",function(require,module,exports,__dirname,__filename,process,global){var lut = require('lut')
-  , SampleShader = require('./shader')
-
-function Colorist(processor, options) {
-  if (!(this instanceof Colorist)) return new Colorist(processor, options)
-  var THREE = this.THREE = processor.THREE
-    , self = this
-    , canvas
-
-  this.shader = SampleShader(processor, THREE)
-
-  options = options || {}
-  options.table = options.table || lut(33, 33, 33)
-
-  this.pass = new processor.ShaderPass(this.shader)
-  processor.addPass(this.pass)
-
-  this.table(options.table)
-};
-
-Colorist.prototype.snapshot = function(original) {
-  var parent = game.renderer.domElement
-    , canvas = document.createElement('canvas')
-    , ctx = canvas.getContext('2d')
-    , image = new Image
-
-  if (original) {
-    game.renderer.render(game.scene, game.camera)
+    else {
+      var width = size.z
+      var height = size.x
+    }
+  }
+  if (size.z === 0) {
+    if (spans.x0 > spans.x1) {
+      var width = size.x
+      var height = size.y
+    }
+    else {
+      var width = size.y
+      var height = size.x
+    }
+  }
+  if ((size.z === 0 && spans.x0 < spans.x1) || (size.x === 0 && spans.y0 > spans.y1)) {
+    return [
+      new THREE.Vector2(height, 0),
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(0, width),
+      new THREE.Vector2(height, width)
+    ]
   } else {
-    game.render()
+    return [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(0, height),
+      new THREE.Vector2(width, height),
+      new THREE.Vector2(width, 0)
+    ]
+  }
+}
+;
+
+},{"three":34}],35:[function(require,module,exports){module.exports = AABB
+
+var vec3 = require('gl-matrix').vec3
+
+function AABB(pos, vec) {
+  if(!(this instanceof AABB)) {
+    return new AABB(pos, vec)
   }
 
-  canvas.width = parent.width
-  canvas.height = parent.height
-  canvas.getContext('2d').drawImage(parent, 0, 0)
+  this.base = pos
+  this.vec = vec
 
-  if (original) {
-    lut(33, 33, 33, canvas)
-  } else {
-    canvas.getContext('2d').drawImage(this.tableTexture.image, 0, 0)
+  this.mag = vec3.length(this.vec)
+
+  this.max = vec3.create()
+  vec3.add(this.max, this.base, this.vec)
+}
+
+var cons = AABB
+  , proto = cons.prototype
+
+proto.width = function() {
+  return this.vec[0]
+}
+
+proto.height = function() {
+  return this.vec[1]
+}
+
+proto.depth = function() {
+  return this.vec[2]
+}
+
+proto.x0 = function() {
+  return this.base[0]
+}
+
+proto.y0 = function() {
+  return this.base[1]
+}
+
+proto.z0 = function() {
+  return this.base[2]
+}
+
+proto.x1 = function() {
+  return this.max[0]
+}
+
+proto.y1 = function() {
+  return this.max[1]
+}
+
+proto.z1 = function() {
+  return this.max[2]
+}
+
+proto.translate = function(by) {
+  vec3.add(this.max, this.max, by)
+  vec3.add(this.base, this.base, by)
+  return this
+}
+
+proto.expand = function(aabb) {
+  var max = vec3.create()
+    , min = vec3.create()
+
+  vec3.max(max, aabb.max, this.max)
+  vec3.min(min, aabb.base, this.base)
+  vec3.sub(max, max, min)
+
+  return new AABB(min, max)
+}
+
+proto.intersects = function(aabb) {
+  if(aabb.base[0] > this.max[0]) return false
+  if(aabb.base[1] > this.max[1]) return false
+  if(aabb.base[2] > this.max[2]) return false
+  if(aabb.max[0] < this.base[0]) return false
+  if(aabb.max[1] < this.base[1]) return false
+  if(aabb.max[2] < this.base[2]) return false
+
+  return true
+}
+
+proto.union = function(aabb) {
+  if(!this.intersects(aabb)) return null
+
+  var base_x = Math.max(aabb.base[0], this.base[0])
+    , base_y = Math.max(aabb.base[1], this.base[1])
+    , base_z = Math.max(aabb.base[2], this.base[2])
+    , max_x = Math.min(aabb.max[0], this.max[0])
+    , max_y = Math.min(aabb.max[1], this.max[1])
+    , max_z = Math.min(aabb.max[2], this.max[2])
+
+  return new AABB([base_x, base_y, base_z], [max_x - base_x, max_y - base_y, max_z - base_z])
+}
+
+},{"gl-matrix":40}],36:[function(require,module,exports){module.exports = SpatialEventEmitter
+
+var slice = [].slice
+  , Tree = require('./tree')
+  , aabb = require('aabb-3d')
+
+function SpatialEventEmitter() {
+  this.root = null
+  this.infinites = {}
+}
+
+var cons = SpatialEventEmitter
+  , proto = cons.prototype
+
+proto.size = 16
+
+proto.addListener = 
+proto.addEventListener = 
+proto.on = function(event, bbox, listener) {
+  if(!finite(bbox)) {
+    (this.infinites[event] = this.infinites[event] || []).push({
+      bbox: bbox
+    , func: listener
+    })
+    return this
   }
 
-  image.src = canvas.toDataURL()
+  (this.root = this.root || this.create_root(bbox))
+    .add(event, bbox, listener)
 
-  return image
-};
+  return this
+}
 
-Colorist.prototype.table = function(table) {
+proto.once = function(event, bbox, listener) {
   var self = this
-    , canvas
 
-  function ready() {
-    var pass = self.pass;
+  self.on(event, bbox, function once() {
+    listener.apply(null, arguments)
+    self.remove(event, once)
+  })
 
-    if (self.tableTexture) {
-      self.tableTexture.image = canvas;
-    } else {
-      self.tableTexture = new self.THREE.Texture(canvas);
-    }
-
-    self.tableTexture.magFilter = self.THREE.NearestFilter;
-    self.tableTexture.minFilter = self.THREE.LinearMipMapLinearFilter;
-    self.tableTexture.wrapT     = self.THREE.RepeatWrapping;
-    self.tableTexture.wrapS     = self.THREE.RepeatWrapping;
-    self.tableTexture.needsUpdate = true;
-
-    pass.uniforms.tColorist.value = self.tableTexture;
-  };
-
-  if (typeof table === 'string' || table.nodeName === 'img') {
-    canvas = imageToCanvas(table, ready);
-  } else {
-    canvas = clipCanvas(table);
-    ready();
-  }
-};
-
-function imageToCanvas(src, callback) {
-  if (src.nodeName === 'canvas') return src
-  callback = callback || function(){}
-
-  var canvas = document.createElement('canvas')
-    , ctx = canvas.getContext('2d')
-    , image
-
-  if (typeof src !== 'string') {
-    src = src.src
-  }
-
-  image = new Image
-  image.onload = function() {
-    canvas.width = 33 * 33
-    canvas.height = 33
-    ctx.drawImage(image, 0, 0)
-    callback()
-  };
-  image.src = src
-
-  return canvas
-};
-
-function clipCanvas(original) {
-  var updated = document.createElement('canvas')
-    , ctx = original.getContext('2d')
-    , imageData = ctx.getImageData(0, 0, 33 * 33, 33)
-
-  updated.width = 33 * 33
-  updated.height = 33
-  updated.getContext('2d').putImageData(imageData, 0, 0)
-
-  return updated
+  return self
 }
 
-module.exports = Colorist
-
-});
-
-require.define("/node_modules/lut/package.json",function(require,module,exports,__dirname,__filename,process,global){module.exports = {"main":"index.js"}
-});
-
-require.define("/node_modules/lut/index.js",function(require,module,exports,__dirname,__filename,process,global){function lut(red, green, blue, canvas) {
-  var red = red || 32, green = green || 32, blue = blue || 32
-
-  if (!canvas) {
-    canvas = document.createElement('canvas')
-    canvas.width = red * blue
-    canvas.height = green
+proto.removeListener =
+proto.removeEventListener =
+proto.remove = function(event, listener) {
+  if(this.root) {
+    this.root.remove(event, listener)
   }
 
-  var r, g, b, x, y
-  var ctx = canvas.getContext('2d')
-    , width = red * blue
-    , height = green
-    , data = ctx.getImageData(0, 0, width, height)
+  if(!this.infinites[event]) {
+    return this
+  }
 
-  for (r = 0; r < red; r += 1) {
-    for (g = 0; g < green; g += 1) {
-      for (b = 0; b < blue; b += 1) {
-        x = r + b * red
-        y = green - g - 1
-        data.data[(x + y * width)*4    ] = 255 * (r+0.5) / red
-        data.data[(x + y * width)*4 + 1] = 255 * (g+0.5) / green
-        data.data[(x + y * width)*4 + 2] = 255 * (b+0.5) / blue
-        data.data[(x + y * width)*4 + 3] = 255 // Alpha Channel
+  for(var i = 0, len = this.infinites[event].length; i < len; ++i) {
+    if(this.infinites[event][i].func === listener) {
+      break
+    }
+  }
+
+  if(i !== len) {
+    this.infinites[event].splice(i, 1)
+  }
+
+  return this
+}
+
+proto.emit = function(event, bbox/*, ...args */) {
+  var args = slice.call(arguments, 2)
+
+  // support point emitting
+  if('0' in bbox) {
+    bbox = aabb(bbox, [0, 0, 0]) 
+  }
+
+  if(this.root) {
+    this.root.send(event, bbox, args)
+  }
+
+  if(!this.infinites[event]) {
+    return this
+  }
+
+  var list = this.infinites[event].slice()
+  for(var i = 0, len = list.length; i < len; ++i) {
+    if(list[i].bbox.intersects(bbox)) {
+      list[i].func.apply(null, args) 
+    }
+  }
+
+  return this
+}
+
+proto.rootSize = function(size) {
+  proto.size = size
+}
+
+proto.create_root = function(bbox) {
+  var self = this
+    , size = self.size
+    , base = [
+        Math.floor(bbox.x0() / size) * size
+      , Math.floor(bbox.y0() / size) * size
+      , Math.floor(bbox.z0() / size) * size
+      ]
+    , tree_bbox = new bbox.constructor(base, [size, size, size])
+
+  function OurTree(size, bbox) {
+    Tree.call(this, size, bbox, null)
+  }
+
+  OurTree.prototype = Object.create(Tree.prototype)
+  OurTree.prototype.constructor = OurTree
+  OurTree.prototype.grow = function(new_root) {
+    self.root = new_root
+  }
+  OurTree.prototype.min_size = size
+
+  return new OurTree(size, tree_bbox) 
+}
+
+function finite(bbox) {
+  return isFinite(bbox.x0()) &&
+         isFinite(bbox.x1()) &&
+         isFinite(bbox.y0()) &&
+         isFinite(bbox.y1()) &&
+         isFinite(bbox.z0()) &&
+         isFinite(bbox.z1())
+}
+
+},{"./tree":60,"aabb-3d":35}],38:[function(require,module,exports){module.exports = physical
+
+var aabb = require('aabb-3d')
+  , THREE = require('three')
+
+function physical(avatar, collidables, dimensions, terminal) {
+  return new Physical(avatar, collidables, dimensions, terminal)
+}
+
+function Physical(avatar, collidables, dimensions, terminal) {
+  this.avatar = avatar
+  this.terminal = terminal || new THREE.Vector3(30, 5.6, 30)
+  this.dimensions = dimensions = dimensions || [1, 1, 1]
+  this._aabb = aabb([0, 0, 0], dimensions)
+  this.resting = {x: false, y: false, z: false}
+  this.collidables = collidables
+  this.friction = new THREE.Vector3(1, 1, 1)
+
+  this.rotation = this.avatar.rotation
+  this.default_friction = 1
+
+  // default yaw/pitch/roll controls to the avatar
+  this.yaw =
+  this.pitch =
+  this.roll = avatar
+
+  this.forces = new THREE.Vector3(0, 0, 0)
+  this.attractors = []
+  this.acceleration = new THREE.Vector3(0, 0, 0)
+  this.velocity = new THREE.Vector3(0, 0, 0)
+}
+
+var cons = Physical
+  , proto = cons.prototype
+  , axes = ['x', 'y', 'z']
+  , abs = Math.abs
+
+// make these *once*, so we're not generating
+// garbage for every object in the game.
+var WORLD_DESIRED = new THREE.Vector3(0, 0, 0)
+  , DESIRED = new THREE.Vector3(0, 0, 0)
+  , START = new THREE.Vector3(0, 0, 0)
+  , END = new THREE.Vector3(0, 0, 0)
+  , DIRECTION = new THREE.Vector3()
+  , LOCAL_ATTRACTOR = new THREE.Vector3()
+  , TOTAL_FORCES = new THREE.Vector3()
+
+proto.applyWorldAcceleration = applyTo('acceleration')
+proto.applyWorldVelocity = applyTo('velocity')
+
+function applyTo(which) {
+  return function(world) {
+    var local = this.avatar.worldToLocal(world)
+    this[which].x += local.x
+    this[which].y += local.y
+    this[which].z += local.z
+  }
+}
+
+proto.tick = function(dt) {
+  var forces = this.forces
+    , acceleration = this.acceleration
+    , velocity = this.velocity
+    , terminal = this.terminal
+    , friction = this.friction
+    , desired = DESIRED
+    , world_desired = WORLD_DESIRED
+    , bbox
+    , pcs
+  TOTAL_FORCES.multiplyScalar(0)
+
+  desired.x =
+  desired.y =
+  desired.z =
+  world_desired.x =
+  world_desired.y =
+  world_desired.z = 0
+
+  for(var i = 0; i < this.attractors.length; i++) {
+    var distance_factor = this.avatar.position.distanceToSquared(this.attractors[i])
+    LOCAL_ATTRACTOR.copy(this.attractors[i])
+    LOCAL_ATTRACTOR = this.avatar.worldToLocal(LOCAL_ATTRACTOR)
+
+    DIRECTION.sub(LOCAL_ATTRACTOR, this.avatar.position)
+
+    DIRECTION.divideScalar(DIRECTION.length() * distance_factor)
+    DIRECTION.multiplyScalar(this.attractors[i].mass)
+
+    TOTAL_FORCES.addSelf(DIRECTION)
+  }
+  
+  if(!this.resting.x) {
+    acceleration.x /= 8 * dt
+    acceleration.x += TOTAL_FORCES.x * dt
+    acceleration.x += forces.x * dt
+
+    velocity.x += acceleration.x * dt
+    velocity.x *= friction.x
+
+    if(abs(velocity.x) < terminal.x) {
+      desired.x = (velocity.x * dt)
+    } else if(velocity.x !== 0) {
+      desired.x = (velocity.x / abs(velocity.x)) * terminal.x
+    }
+  } else {
+    acceleration.x = velocity.x = 0
+  }
+  if(!this.resting.y) {
+    acceleration.y /= 8 * dt
+    acceleration.y += TOTAL_FORCES.y * dt
+    acceleration.y += forces.y * dt
+
+    velocity.y += acceleration.y * dt
+    velocity.y *= friction.y
+
+    if(abs(velocity.y) < terminal.y) {
+      desired.y = (velocity.y * dt)
+    } else if(velocity.y !== 0) {
+      desired.y = (velocity.y / abs(velocity.y)) * terminal.y
+    }
+  } else {
+    acceleration.y = velocity.y = 0
+  }
+  if(!this.resting.z) {
+    acceleration.z /= 8 * dt
+    acceleration.z += TOTAL_FORCES.z * dt
+    acceleration.z += forces.z * dt
+
+    velocity.z += acceleration.z * dt
+    velocity.z *= friction.z
+
+    if(abs(velocity.z) < terminal.z) {
+      desired.z = (velocity.z * dt)
+    } else if(velocity.z !== 0) {
+      desired.z = (velocity.z / abs(velocity.z)) * terminal.z
+    }
+  } else {
+    acceleration.z = velocity.z = 0
+  }
+  
+  START.copy(this.avatar.position)
+  this.avatar.translateX(desired.x)
+  this.avatar.translateY(desired.y)
+  this.avatar.translateZ(desired.z)
+  END.copy(this.avatar.position)
+  this.avatar.position.copy(START)
+  world_desired.x = END.x - START.x
+  world_desired.y = END.y - START.y
+  world_desired.z = END.z - START.z
+  this.friction.x =
+  this.friction.y =
+  this.friction.z = this.default_friction
+
+  // run collisions
+  this.resting.x =
+  this.resting.y =
+  this.resting.z = false
+
+  bbox = this.aabb()
+  pcs = this.collidables
+
+  for(var i = 0, len = pcs.length; i < len; ++i) {
+    if(pcs[i] !== this) {
+      pcs[i].collide(this, bbox, world_desired, this.resting)
+    }
+  }
+
+  // apply translation
+  this.avatar.position.x += world_desired.x
+  this.avatar.position.y += world_desired.y
+  this.avatar.position.z += world_desired.z
+}
+
+proto.subjectTo = function(force) {
+  this.forces.x += force[0]
+  this.forces.y += force[1]
+  this.forces.z += force[2]
+  return this
+}
+
+proto.attractTo = function(vector, mass) {
+  vector.mass = mass
+  this.attractors.push(vector)
+}
+
+proto.aabb = function() {
+  return aabb(
+      [this.avatar.position.x, this.avatar.position.y, this.avatar.position.z]
+    , this.dimensions
+  )
+}
+
+// no object -> object collisions for now, thanks
+proto.collide = function(other, bbox, world_vec, resting) {
+  return
+}
+
+proto.atRestX = function() {
+  return this.resting.x
+}
+
+proto.atRestY = function() {
+  return this.resting.y
+}
+
+proto.atRestZ = function() {
+  return this.resting.z
+}
+
+},{"aabb-3d":35,"three":34}],54:[function(require,module,exports){var EventEmitter = require('events').EventEmitter;
+
+module.exports = function (elem) {
+    return new Ever(elem);
+};
+
+function Ever (elem) {
+    this.element = elem;
+}
+
+Ever.prototype = new EventEmitter;
+
+Ever.prototype.on = function (name, cb, useCapture) {
+    if (!this._events) this._events = {};
+    if (!this._events[name]) this._events[name] = [];
+    this._events[name].push(cb);
+    this.element.addEventListener(name, cb, useCapture || false);
+
+    return this;
+};
+Ever.prototype.addListener = Ever.prototype.on;
+
+Ever.prototype.removeListener = function (type, listener, useCapture) {
+    if (!this._events) this._events = {};
+    this.element.removeEventListener(type, listener, useCapture || false);
+    
+    var xs = this.listeners(type);
+    var ix = xs.indexOf(listener);
+    if (ix >= 0) xs.splice(ix, 1);
+
+    return this;
+};
+
+Ever.prototype.removeAllListeners = function (type) {
+    var self = this;
+    function removeAll (t) {
+        var xs = self.listeners(t);
+        for (var i = 0; i < xs.length; i++) {
+            self.removeListener(t, xs[i]);
+        }
+    }
+    
+    if (type) {
+        removeAll(type)
+    }
+    else if (self._events) {
+        for (var key in self._events) {
+            if (key) removeAll(key);
+        }
+    }
+    return EventEmitter.prototype.removeAllListeners.apply(self, arguments);
+}
+
+var initSignatures = require('./init.json');
+
+Ever.prototype.emit = function (name, ev) {
+    if (typeof name === 'object') {
+        ev = name;
+        name = ev.type;
+    }
+    
+    if (!isEvent(ev)) {
+        var type = Ever.typeOf(name);
+        
+        var opts = ev || {};
+        if (opts.type === undefined) opts.type = name;
+        
+        ev = document.createEvent(type + 's');
+        var init = typeof ev['init' + type] === 'function'
+            ? 'init' + type : 'initEvent'
+        ;
+        
+        var sig = initSignatures[init];
+        var used = {};
+        var args = [];
+        
+        for (var i = 0; i < sig.length; i++) {
+            var key = sig[i];
+            args.push(opts[key]);
+            used[key] = true;
+        }
+        ev[init].apply(ev, args);
+        
+        // attach remaining unused options to the object
+        for (var key in opts) {
+            if (!used[key]) ev[key] = opts[key];
+        }
+    }
+    return this.element.dispatchEvent(ev);
+};
+
+function isEvent (ev) {
+    var s = Object.prototype.toString.call(ev);
+    return /\[object \S+Event\]/.test(s);
+}
+
+Ever.types = require('./types.json');
+Ever.typeOf = (function () {
+    var types = {};
+    for (var key in Ever.types) {
+        var ts = Ever.types[key];
+        for (var i = 0; i < ts.length; i++) {
+            types[ts[i]] = key;
+        }
+    }
+    
+    return function (name) {
+        return types[name] || 'Event';
+    };
+})();;
+
+},{"events":18,"./init.json":61,"./types.json":62}],46:[function(require,module,exports){var events = require('events');
+
+exports.isArray = isArray;
+exports.isDate = function(obj){return Object.prototype.toString.call(obj) === '[object Date]'};
+exports.isRegExp = function(obj){return Object.prototype.toString.call(obj) === '[object RegExp]'};
+
+
+exports.print = function () {};
+exports.puts = function () {};
+exports.debug = function() {};
+
+exports.inspect = function(obj, showHidden, depth, colors) {
+  var seen = [];
+
+  var stylize = function(str, styleType) {
+    // http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
+    var styles =
+        { 'bold' : [1, 22],
+          'italic' : [3, 23],
+          'underline' : [4, 24],
+          'inverse' : [7, 27],
+          'white' : [37, 39],
+          'grey' : [90, 39],
+          'black' : [30, 39],
+          'blue' : [34, 39],
+          'cyan' : [36, 39],
+          'green' : [32, 39],
+          'magenta' : [35, 39],
+          'red' : [31, 39],
+          'yellow' : [33, 39] };
+
+    var style =
+        { 'special': 'cyan',
+          'number': 'blue',
+          'boolean': 'yellow',
+          'undefined': 'grey',
+          'null': 'bold',
+          'string': 'green',
+          'date': 'magenta',
+          // "name": intentionally not styling
+          'regexp': 'red' }[styleType];
+
+    if (style) {
+      return '\033[' + styles[style][0] + 'm' + str +
+             '\033[' + styles[style][1] + 'm';
+    } else {
+      return str;
+    }
+  };
+  if (! colors) {
+    stylize = function(str, styleType) { return str; };
+  }
+
+  function format(value, recurseTimes) {
+    // Provide a hook for user-specified inspect functions.
+    // Check that value is an object with an inspect function on it
+    if (value && typeof value.inspect === 'function' &&
+        // Filter out the util module, it's inspect function is special
+        value !== exports &&
+        // Also filter out any prototype objects using the circular check.
+        !(value.constructor && value.constructor.prototype === value)) {
+      return value.inspect(recurseTimes);
+    }
+
+    // Primitive types cannot have properties
+    switch (typeof value) {
+      case 'undefined':
+        return stylize('undefined', 'undefined');
+
+      case 'string':
+        var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
+                                                 .replace(/'/g, "\\'")
+                                                 .replace(/\\"/g, '"') + '\'';
+        return stylize(simple, 'string');
+
+      case 'number':
+        return stylize('' + value, 'number');
+
+      case 'boolean':
+        return stylize('' + value, 'boolean');
+    }
+    // For some reason typeof null is "object", so special case here.
+    if (value === null) {
+      return stylize('null', 'null');
+    }
+
+    // Look up the keys of the object.
+    var visible_keys = Object_keys(value);
+    var keys = showHidden ? Object_getOwnPropertyNames(value) : visible_keys;
+
+    // Functions without properties can be shortcutted.
+    if (typeof value === 'function' && keys.length === 0) {
+      if (isRegExp(value)) {
+        return stylize('' + value, 'regexp');
+      } else {
+        var name = value.name ? ': ' + value.name : '';
+        return stylize('[Function' + name + ']', 'special');
+      }
+    }
+
+    // Dates without properties can be shortcutted
+    if (isDate(value) && keys.length === 0) {
+      return stylize(value.toUTCString(), 'date');
+    }
+
+    var base, type, braces;
+    // Determine the object type
+    if (isArray(value)) {
+      type = 'Array';
+      braces = ['[', ']'];
+    } else {
+      type = 'Object';
+      braces = ['{', '}'];
+    }
+
+    // Make functions say that they are functions
+    if (typeof value === 'function') {
+      var n = value.name ? ': ' + value.name : '';
+      base = (isRegExp(value)) ? ' ' + value : ' [Function' + n + ']';
+    } else {
+      base = '';
+    }
+
+    // Make dates with properties first say the date
+    if (isDate(value)) {
+      base = ' ' + value.toUTCString();
+    }
+
+    if (keys.length === 0) {
+      return braces[0] + base + braces[1];
+    }
+
+    if (recurseTimes < 0) {
+      if (isRegExp(value)) {
+        return stylize('' + value, 'regexp');
+      } else {
+        return stylize('[Object]', 'special');
+      }
+    }
+
+    seen.push(value);
+
+    var output = keys.map(function(key) {
+      var name, str;
+      if (value.__lookupGetter__) {
+        if (value.__lookupGetter__(key)) {
+          if (value.__lookupSetter__(key)) {
+            str = stylize('[Getter/Setter]', 'special');
+          } else {
+            str = stylize('[Getter]', 'special');
+          }
+        } else {
+          if (value.__lookupSetter__(key)) {
+            str = stylize('[Setter]', 'special');
+          }
+        }
+      }
+      if (visible_keys.indexOf(key) < 0) {
+        name = '[' + key + ']';
+      }
+      if (!str) {
+        if (seen.indexOf(value[key]) < 0) {
+          if (recurseTimes === null) {
+            str = format(value[key]);
+          } else {
+            str = format(value[key], recurseTimes - 1);
+          }
+          if (str.indexOf('\n') > -1) {
+            if (isArray(value)) {
+              str = str.split('\n').map(function(line) {
+                return '  ' + line;
+              }).join('\n').substr(2);
+            } else {
+              str = '\n' + str.split('\n').map(function(line) {
+                return '   ' + line;
+              }).join('\n');
+            }
+          }
+        } else {
+          str = stylize('[Circular]', 'special');
+        }
+      }
+      if (typeof name === 'undefined') {
+        if (type === 'Array' && key.match(/^\d+$/)) {
+          return str;
+        }
+        name = JSON.stringify('' + key);
+        if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
+          name = name.substr(1, name.length - 2);
+          name = stylize(name, 'name');
+        } else {
+          name = name.replace(/'/g, "\\'")
+                     .replace(/\\"/g, '"')
+                     .replace(/(^"|"$)/g, "'");
+          name = stylize(name, 'string');
+        }
+      }
+
+      return name + ': ' + str;
+    });
+
+    seen.pop();
+
+    var numLinesEst = 0;
+    var length = output.reduce(function(prev, cur) {
+      numLinesEst++;
+      if (cur.indexOf('\n') >= 0) numLinesEst++;
+      return prev + cur.length + 1;
+    }, 0);
+
+    if (length > 50) {
+      output = braces[0] +
+               (base === '' ? '' : base + '\n ') +
+               ' ' +
+               output.join(',\n  ') +
+               ' ' +
+               braces[1];
+
+    } else {
+      output = braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
+    }
+
+    return output;
+  }
+  return format(obj, (typeof depth === 'undefined' ? 2 : depth));
+};
+
+
+function isArray(ar) {
+  return ar instanceof Array ||
+         Array.isArray(ar) ||
+         (ar && ar !== Object.prototype && isArray(ar.__proto__));
+}
+
+
+function isRegExp(re) {
+  return re instanceof RegExp ||
+    (typeof re === 'object' && Object.prototype.toString.call(re) === '[object RegExp]');
+}
+
+
+function isDate(d) {
+  if (d instanceof Date) return true;
+  if (typeof d !== 'object') return false;
+  var properties = Date.prototype && Object_getOwnPropertyNames(Date.prototype);
+  var proto = d.__proto__ && Object_getOwnPropertyNames(d.__proto__);
+  return JSON.stringify(proto) === JSON.stringify(properties);
+}
+
+function pad(n) {
+  return n < 10 ? '0' + n.toString(10) : n.toString(10);
+}
+
+var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
+              'Oct', 'Nov', 'Dec'];
+
+// 26 Feb 16:19:34
+function timestamp() {
+  var d = new Date();
+  var time = [pad(d.getHours()),
+              pad(d.getMinutes()),
+              pad(d.getSeconds())].join(':');
+  return [d.getDate(), months[d.getMonth()], time].join(' ');
+}
+
+exports.log = function (msg) {};
+
+exports.pump = null;
+
+var Object_keys = Object.keys || function (obj) {
+    var res = [];
+    for (var key in obj) res.push(key);
+    return res;
+};
+
+var Object_getOwnPropertyNames = Object.getOwnPropertyNames || function (obj) {
+    var res = [];
+    for (var key in obj) {
+        if (Object.hasOwnProperty.call(obj, key)) res.push(key);
+    }
+    return res;
+};
+
+var Object_create = Object.create || function (prototype, properties) {
+    // from es5-shim
+    var object;
+    if (prototype === null) {
+        object = { '__proto__' : null };
+    }
+    else {
+        if (typeof prototype !== 'object') {
+            throw new TypeError(
+                'typeof prototype[' + (typeof prototype) + '] != \'object\''
+            );
+        }
+        var Type = function () {};
+        Type.prototype = prototype;
+        object = new Type();
+        object.__proto__ = prototype;
+    }
+    if (typeof properties !== 'undefined' && Object.defineProperties) {
+        Object.defineProperties(object, properties);
+    }
+    return object;
+};
+
+exports.inherits = function(ctor, superCtor) {
+  ctor.super_ = superCtor;
+  ctor.prototype = Object_create(superCtor.prototype, {
+    constructor: {
+      value: ctor,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    }
+  });
+};
+
+var formatRegExp = /%[sdj%]/g;
+exports.format = function(f) {
+  if (typeof f !== 'string') {
+    var objects = [];
+    for (var i = 0; i < arguments.length; i++) {
+      objects.push(exports.inspect(arguments[i]));
+    }
+    return objects.join(' ');
+  }
+
+  var i = 1;
+  var args = arguments;
+  var len = args.length;
+  var str = String(f).replace(formatRegExp, function(x) {
+    if (x === '%%') return '%';
+    if (i >= len) return x;
+    switch (x) {
+      case '%s': return String(args[i++]);
+      case '%d': return Number(args[i++]);
+      case '%j': return JSON.stringify(args[i++]);
+      default:
+        return x;
+    }
+  });
+  for(var x = args[i]; i < len; x = args[++i]){
+    if (x === null || typeof x !== 'object') {
+      str += ' ' + x;
+    } else {
+      str += ' ' + exports.inspect(x);
+    }
+  }
+  return str;
+};
+
+},{"events":18}],53:[function(require,module,exports){var chunker = require('./chunker')
+
+module.exports = function(opts) {
+  if (!opts.generateVoxelChunk) opts.generateVoxelChunk = function(low, high) {
+    return generate(low, high, module.exports.generator['Valley'])
+  }
+  return chunker(opts)
+}
+
+module.exports.meshers = {
+  culled: require('./meshers/culled').mesher,
+  greedy: require('./meshers/greedy').mesher,
+  monotone: require('./meshers/monotone').mesher,
+  stupid: require('./meshers/stupid').mesher
+}
+
+module.exports.Chunker = chunker.Chunker
+module.exports.geometry = {}
+module.exports.generator = {}
+module.exports.generate = generate
+
+// from https://github.com/mikolalysenko/mikolalysenko.github.com/blob/master/MinecraftMeshes2/js/testdata.js#L4
+function generate(l, h, f) {
+  var d = [ h[0]-l[0], h[1]-l[1], h[2]-l[2] ]
+  var v = new Int8Array(d[0]*d[1]*d[2])
+  var n = 0
+  for(var k=l[2]; k<h[2]; ++k)
+  for(var j=l[1]; j<h[1]; ++j)
+  for(var i=l[0]; i<h[0]; ++i, ++n) {
+    v[n] = f(i,j,k,n)
+  }
+  return {voxels:v, dims:d}
+}
+
+// shape and terrain generator functions
+module.exports.generator['Sphere'] = function(i,j,k) {
+  return i*i+j*j+k*k <= 16*16 ? 1 : 0
+}
+
+module.exports.generator['Noise'] = function(i,j,k) {
+  return Math.random() < 0.1 ? Math.random() * 0xffffff : 0;
+}
+
+module.exports.generator['Dense Noise'] = function(i,j,k) {
+  return Math.round(Math.random() * 0xffffff);
+}
+
+module.exports.generator['Checker'] = function(i,j,k) {
+  return !!((i+j+k)&1) ? (((i^j^k)&2) ? 1 : 0xffffff) : 0;
+}
+
+module.exports.generator['Hill'] = function(i,j,k) {
+  return j <= 16 * Math.exp(-(i*i + k*k) / 64) ? 1 : 0;
+}
+
+module.exports.generator['Valley'] = function(i,j,k) {
+  return j <= (i*i + k*k) * 31 / (32*32*2) + 1 ? 1 : 0;
+}
+
+module.exports.generator['Hilly Terrain'] = function(i,j,k) {
+  var h0 = 3.0 * Math.sin(Math.PI * i / 12.0 - Math.PI * k * 0.1) + 27;    
+  if(j > h0+1) {
+    return 0;
+  }
+  if(h0 <= j) {
+    return 1;
+  }
+  var h1 = 2.0 * Math.sin(Math.PI * i * 0.25 - Math.PI * k * 0.3) + 20;
+  if(h1 <= j) {
+    return 2;
+  }
+  if(2 < j) {
+    return Math.random() < 0.1 ? 0x222222 : 0xaaaaaa;
+  }
+  return 3;
+}
+
+module.exports.scale = function ( x, fromLow, fromHigh, toLow, toHigh ) {
+  return ( x - fromLow ) * ( toHigh - toLow ) / ( fromHigh - fromLow ) + toLow
+}
+
+// convenience function that uses the above functions to prebake some simple voxel geometries
+module.exports.generateExamples = function() {
+  return {
+    'Sphere': generate([-16,-16,-16], [16,16,16], module.exports.generator['Sphere']),
+    'Noise': generate([0,0,0], [16,16,16], module.exports.generator['Noise']),
+    'Dense Noise': generate([0,0,0], [16,16,16], module.exports.generator['Dense Noise']),
+    'Checker': generate([0,0,0], [8,8,8], module.exports.generator['Checker']),
+    'Hill': generate([-16, 0, -16], [16,16,16], module.exports.generator['Hill']),
+    'Valley': generate([0,0,0], [32,32,32], module.exports.generator['Valley']),
+    'Hilly Terrain': generate([0, 0, 0], [32,32,32], module.exports.generator['Hilly Terrain'])
+  }
+}
+
+
+},{"./chunker":63,"./meshers/culled":64,"./meshers/greedy":65,"./meshers/monotone":66,"./meshers/stupid":67}],43:[function(require,module,exports){module.exports = coordinates
+
+var aabb = require('aabb-3d')
+var events = require('events')
+
+function coordinates(spatial, box, regionWidth) {
+  var emitter = new events.EventEmitter()
+  var lastRegion = [NaN, NaN, NaN]
+  var thisRegion
+
+  if (arguments.length === 2) {
+    regionWidth = box
+    box = aabb([-Infinity, -Infinity, -Infinity], [Infinity, Infinity, Infinity])
+  }
+
+  spatial.on('position', box, updateRegion)
+  
+  function updateRegion(pos) {
+    thisRegion = [Math.floor(pos[0] / regionWidth), Math.floor(pos[1] / regionWidth), Math.floor(pos[2] / regionWidth)]
+    if (thisRegion[0] !== lastRegion[0] || thisRegion[1] !== lastRegion[1] || thisRegion[2] !== lastRegion[2]) {
+      emitter.emit('change', thisRegion)
+    }
+    lastRegion = thisRegion
+  }
+ 
+  return emitter
+}
+},{"events":18,"aabb-3d":35}],58:[function(require,module,exports){module.exports = fullscreen
+fullscreen.available = available
+
+var EE = require('events').EventEmitter
+
+function available() {
+  return !!shim(document.body)
+}
+
+function fullscreen(el) {
+  var ael = el.addEventListener || el.attachEvent
+    , doc = el.ownerDocument
+    , body = doc.body
+    , rfs = shim(el)
+    , ee = new EE
+
+  var vendors = ['', 'webkit', 'moz', 'ms', 'o']
+
+  for(var i = 0, len = vendors.length; i < len; ++i) {
+    ael.call(doc, vendors[i]+'fullscreenchange', onfullscreenchange)
+    ael.call(doc, vendors[i]+'fullscreenerror', onfullscreenerror)
+  }
+
+  ee.release = release
+  ee.request = request
+  ee.target = fullscreenelement
+
+  if(!shim) {
+    setTimeout(function() {
+      ee.emit('error', new Error('fullscreen is not supported'))
+    }, 0)
+  }
+  return ee
+
+  function onfullscreenchange() {
+    if(!fullscreenelement()) {
+      return ee.emit('release')
+    }
+    ee.emit('attain')
+  }
+
+  function onfullscreenerror() {
+    ee.emit('error')
+  }
+
+  function request() {
+    return rfs.call(el)
+  }
+
+  function release() {
+    (el.exitFullscreen ||
+    el.exitFullscreen ||
+    el.webkitExitFullScreen ||
+    el.webkitExitFullscreen ||
+    el.mozExitFullScreen ||
+    el.mozExitFullscreen ||
+    el.msExitFullScreen ||
+    el.msExitFullscreen ||
+    el.oExitFullScreen ||
+    el.oExitFullscreen).call(el)
+  } 
+
+  function fullscreenelement() {
+    return 0 ||
+      doc.fullScreenElement ||
+      doc.fullscreenElement ||
+      doc.webkitFullScreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.mozFullscreenElement ||
+      doc.msFullScreenElement ||
+      doc.msFullscreenElement ||
+      doc.oFullScreenElement ||
+      doc.oFullscreenElement ||
+      null
+  }
+}
+
+function shim(el) {
+  return (el.requestFullscreen ||
+    el.webkitRequestFullscreen ||
+    el.webkitRequestFullScreen ||
+    el.mozRequestFullscreen ||
+    el.mozRequestFullScreen ||
+    el.msRequestFullscreen ||
+    el.msRequestFullScreen ||
+    el.oRequestFullscreen ||
+    el.oRequestFullScreen)
+}
+
+},{"events":18}],59:[function(require,module,exports){module.exports = pointer
+
+pointer.available = available
+
+var EE = require('events').EventEmitter
+  , Stream = require('stream').Stream
+
+function available() {
+  return !!shim(document.body)
+}
+
+function pointer(el) {
+  var ael = el.addEventListener || el.attachEvent
+    , rel = el.removeEventListener || el.detachEvent
+    , doc = el.ownerDocument
+    , body = doc.body
+    , rpl = shim(el) 
+    , out = {dx: 0, dy: 0, dt: 0}
+    , ee = new EE
+    , stream = null
+    , lastPageX, lastPageY
+    , needsFullscreen = false
+    , mouseDownMS
+
+  ael.call(el, 'mousedown', onmousedown, false)
+  ael.call(el, 'mouseup', onmouseup, false)
+  ael.call(body, 'mousemove', onmove, false)
+
+  var vendors = ['', 'webkit', 'moz', 'ms', 'o']
+
+  for(var i = 0, len = vendors.length; i < len; ++i) {
+    ael.call(doc, vendors[i]+'pointerlockchange', onpointerlockchange)
+    ael.call(doc, vendors[i]+'pointerlockerror', onpointerlockerror)
+  }
+
+  ee.release = release
+  ee.target = pointerlockelement
+  ee.request = onmousedown
+  ee.destroy = function() {
+    rel.call(el, 'mouseup', onmouseup, false)
+    rel.call(el, 'mousedown', onmousedown, false)
+    rel.call(el, 'mousemove', onmove, false)
+  }
+
+  if(!shim) {
+    setTimeout(function() {
+      ee.emit('error', new Error('pointer lock is not supported'))
+    }, 0)
+  }
+  return ee
+
+  function onmousedown(ev) {
+    if(pointerlockelement()) {
+      return
+    }
+    mouseDownMS = +new Date
+    rpl.call(el)
+  }
+
+  function onmouseup(ev) {
+    if(!needsFullscreen) {
+      return
+    }
+
+    ee.emit('needs-fullscreen')
+    needsFullscreen = false
+  }
+
+  function onpointerlockchange(ev) {
+    if(!pointerlockelement()) {
+      if(stream) release()
+      return
+    }
+
+    stream = new Stream
+    stream.readable = true
+    stream.initial = {x: lastPageX, y: lastPageY, t: Date.now()}
+
+    ee.emit('attain', stream)
+  }
+
+  function onpointerlockerror(ev) {
+    var dt = +(new Date) - mouseDownMS
+    if(dt < 100) {
+      // we errored immediately, we need to do fullscreen first.
+      needsFullscreen = true
+      return
+    }
+
+    if(stream) {
+      stream.emit('error', ev)
+      stream = null
+    }
+  }
+
+  function release() {
+    ee.emit('release')
+
+    if(stream) {
+      stream.emit('end')
+      stream.readable = false
+      stream.emit('close')
+      stream = null
+    }
+
+    var pel = pointerlockelement()
+    if(!pel) {
+      return
+    }
+
+    (doc.exitPointerLock ||
+    doc.mozExitPointerLock ||
+    doc.webkitExitPointerLock ||
+    doc.msExitPointerLock ||
+    doc.oExitPointerLock).call(doc)
+  }
+
+  function onmove(ev) {
+    lastPageX = ev.pageX
+    lastPageY = ev.pageY
+
+    if(!stream) return
+
+    // we're reusing a single object
+    // because I'd like to avoid piling up
+    // a ton of objects for the garbage
+    // collector.
+    out.dx =
+      ev.movementX || ev.webkitMovementX ||
+      ev.mozMovementX || ev.msMovementX ||
+      ev.oMovementX || 0
+
+    out.dy = 
+      ev.movementY || ev.webkitMovementY ||
+      ev.mozMovementY || ev.msMovementY ||
+      ev.oMovementY || 0
+
+    out.dt = Date.now() - stream.initial.t
+
+    ee.emit('data', out)
+    stream.emit('data', out)
+  }
+
+  function pointerlockelement() {
+    return 0 ||
+      doc.pointerLockElement ||
+      doc.mozPointerLockElement ||
+      doc.webkitPointerLockElement ||
+      doc.msPointerLockElement ||
+      doc.oPointerLockElement ||
+      null
+  }
+}
+
+function shim(el) {
+  return el.requestPointerLock ||
+    el.webkitRequestPointerLock ||
+    el.mozRequestPointerLock ||
+    el.msRequestPointerLock ||
+    el.oRequestPointerLock ||
+    null
+}
+
+},{"events":18,"stream":45}],41:[function(require,module,exports){var transparent = require('opaque').transparent;
+
+function Texture(opts) {
+  var self = this;
+  if (!(this instanceof Texture)) return new Texture(opts || {});
+  this.THREE              = opts.THREE          || require('three');
+  this.materials          = [];
+  this.texturePath        = opts.texturePath    || '/textures/';
+  this.materialParams     = opts.materialParams || {};
+  this.materialType       = opts.materialType   || this.THREE.MeshLambertMaterial;
+  this.materialIndex      = [];
+  this._animations        = [];
+  this._materialDefaults  = { ambient: 0xbbbbbb };
+  this.applyTextureParams = opts.applyTextureParams || function(map) {
+    map.magFilter = self.THREE.NearestFilter;
+    map.minFilter = self.THREE.LinearMipMapLinearFilter;
+    map.wrapT     = self.THREE.RepeatWrapping;
+    map.wrapS     = self.THREE.RepeatWrapping;
+  }
+}
+module.exports = Texture;
+
+Texture.prototype.load = function(names, opts) {
+  var self = this;
+  opts = self._options(opts);
+  if (!isArray(names)) names = [names];
+  if (!hasSubArray(names)) names = [names];
+  return [].concat.apply([], names.map(function(name) {
+    name = self._expandName(name);
+    self.materialIndex.push([self.materials.length, self.materials.length + name.length]);
+    return name.map(function(n) {
+      if (n instanceof self.THREE.Texture) {
+        var map = n;
+        n = n.name;
+      } else if (typeof n === 'string') {
+        var map = self.THREE.ImageUtils.loadTexture(self.texturePath + ext(n));
+      } else {
+        var map = new self.THREE.Texture(n);
+        n = map.name;
+      }
+      self.applyTextureParams.call(self, map);
+      var mat = new opts.materialType(opts.materialParams);
+      mat.map = map;
+      mat.name = n;
+      if (opts.transparent == null) self._isTransparent(mat);
+      self.materials.push(mat);
+      return mat;
+    });
+  }));
+};
+
+Texture.prototype.get = function(index) {
+  if (index == null) return this.materials;
+  if (typeof index === 'number') {
+    index = this.materialIndex[index];
+  } else {
+    var i = this.find(index);
+    if (i !== -1) index = i;
+    for (var i = 0; i < this.materialIndex.length; i++) {
+      var idx = this.materialIndex[i];
+      if (index >= idx[0] && index < idx[1]) {
+        index = idx;
+        break;
       }
     }
   }
-
-  ctx.putImageData(data, 0, 0)
-
-  return canvas
+  return this.materials.slice(index[0], index[1]);
 };
 
-module.exports = lut
-
-});
-
-require.define("/shader.js",function(require,module,exports,__dirname,__filename,process,global){var sampleAs3DTexture
-
-module.exports = function(composer) {
-  var THREE = composer.THREE
-  var shader = {
-    vertexShader: composer.CopyShader.vertexShader,
-    fragmentShader: [
-      "uniform sampler2D tDiffuse;",
-      "uniform sampler2D tColorist;",
-      "varying vec2 vUv;",
-
-      sampleAs3DTexture,
-
-      "void main() {",
-
-        // Using a 33^3 table instead of 32^3, because for some reason
-        // the pixels get weird at that resolution.
-        "vec4 texel = texture2D( tDiffuse, vUv );",
-        "vec4 mapped = sampleAs3DTexture(tColorist, texel.rgb, 33.0);",
-        "gl_FragColor = mapped;",
-
-      "}"
-    ].join('\n')
+Texture.prototype.find = function(name) {
+  for (var i = 0; i < this.materials.length; i++) {
+    if (name === this.materials[i].name) return i;
   }
+  return -1;
+};
 
-  shader.uniforms = THREE.UniformsUtils.merge([
-    composer.CopyShader.uniforms, {
-      tColorist: { type: 't', value: null }
+Texture.prototype._expandName = function(name) {
+  if (name.top) return [name.back, name.front, name.top, name.bottom, name.left, name.right];
+  if (!isArray(name)) name = [name];
+  // load the 0 texture to all
+  if (name.length === 1) name = [name[0],name[0],name[0],name[0],name[0],name[0]];
+  // 0 is top/bottom, 1 is sides
+  if (name.length === 2) name = [name[1],name[1],name[0],name[0],name[1],name[1]];
+  // 0 is top, 1 is bottom, 2 is sides
+  if (name.length === 3) name = [name[2],name[2],name[0],name[1],name[2],name[2]];
+  // 0 is top, 1 is bottom, 2 is front/back, 3 is left/right
+  if (name.length === 4) name = [name[2],name[2],name[0],name[1],name[3],name[3]];
+  return name;
+};
+
+Texture.prototype._options = function(opts) {
+  opts = opts || {};
+  opts.materialType = opts.materialType || this.materialType;
+  opts.materialParams = defaults(opts.materialParams || {}, this._materialDefaults, this.materialParams);
+  opts.applyTextureParams = opts.applyTextureParams || this.applyTextureParams;
+  return opts;
+};
+
+Texture.prototype.paint = function(geom) {
+  var self = this;
+  geom.faces.forEach(function(face, i) {
+    var c = face.vertexColors[0];
+    var index = Math.floor(c.b*255 + c.g*255*255 + c.r*255*255*255);
+    index = self.materialIndex[Math.floor(Math.max(0, index - 1) % self.materialIndex.length)][0];
+
+    // BACK, FRONT, TOP, BOTTOM, LEFT, RIGHT
+    if      (face.normal.z === 1)  index += 1;
+    else if (face.normal.y === 1)  index += 2;
+    else if (face.normal.y === -1) index += 3;
+    else if (face.normal.x === -1) index += 4;
+    else if (face.normal.x === 1)  index += 5;
+
+    face.materialIndex = index;
+  });
+};
+
+Texture.prototype.sprite = function(name, w, h, cb) {
+  var self = this;
+  if (typeof w === 'function') { cb = w; w = null; }
+  if (typeof h === 'function') { cb = h; h = null; }
+  w = w || 16; h = h || w;
+  var img = new Image();
+  img.src = self.texturePath + ext(name);
+  img.onerror = cb;
+  img.onload = function() {
+    var textures = [];
+    for (var x = 0; x < img.width; x += w) {
+      for (var y = 0; y < img.height; y += h) {
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+        var tex = new self.THREE.Texture(canvas);
+        tex.name = name + '_' + x + '_' + y;
+        tex.needsUpdate = true;
+        textures.push(tex);
+      }
     }
-  ])
-
-  return shader
+    cb(null, textures);
+  };
+  return self;
 };
 
-/*
- * Copyright 2011, Google Inc.
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are
- * met:
- *
- *     * Redistributions of source code must retain the above copyright
- * notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- * copyright notice, this list of conditions and the following disclaimer
- * in the documentation and/or other materials provided with the
- * distribution.
- *     * Neither the name of Google Inc. nor the names of its
- * contributors may be used to endorse or promote products derived from
- * this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
- * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+Texture.prototype.animate = function(names, delay) {
+  var self = this;
+  delay = delay || 1000;
+  names = names.map(function(name) {
+    return (typeof name === 'string') ? self.find(name) : name;
+  }).filter(function(name) {
+    return (name !== -1);
+  });
+  if (names.length < 2) return false;
+  if (self._clock == null) self._clock = new self.THREE.Clock();
+  var mat = self.materials[names[0]].clone();
+  self.materials.push(mat);
+  names = [self.materials.length - 1, delay, 0].concat(names);
+  self._animations.push(names);
+  return mat;
+};
 
-// Emulates GLSL's texture3D - used for reading from the colour table.
-//
-// Source code can be found at:
-// https://code.google.com/p/webglsamples/source/browse/color-adjust/color-adjust.html
-sampleAs3DTexture = [
-"vec4 sampleAs3DTexture(sampler2D tex, vec3 texCoord, float size) {"
-  , "float sliceSize = 1.0 / size;                         // space of 1 slice"
-  , "float slicePixelSize = sliceSize / size;              // space of 1 pixel"
-  , "float sliceInnerSize = slicePixelSize * (size - 1.0); // space of size pixels"
-  , "float zSlice0 = min(floor(texCoord.z * size), size - 1.0);"
-  , "float zSlice1 = min(zSlice0 + 1.0, size - 1.0);"
-  , "float xOffset = slicePixelSize * 0.5 + texCoord.x * sliceInnerSize;"
-  , "float s0 = xOffset + (zSlice0 * sliceSize);"
-  , "float s1 = xOffset + (zSlice1 * sliceSize);"
-  , "vec4 slice0Color = texture2D(tex, vec2(s0, texCoord.y));"
-  , "vec4 slice1Color = texture2D(tex, vec2(s1, texCoord.y));"
-  , "float zOffset = mod(texCoord.z * size, 1.0);"
-  , "return mix(slice0Color, slice1Color, zOffset);"
-, "}" ].join('\n')
+Texture.prototype.tick = function() {
+  var self = this;
+  if (self._animations.length < 1 || self._clock == null) return false;
+  var t = self._clock.getElapsedTime();
+  self._animations.forEach(function(anim) {
+    var mats = anim.slice(3);
+    var i = Math.round(t / (anim[1] / 1000)) % (mats.length);
+    if (anim[2] !== i) {
+      self.materials[anim[0]].map = self.materials[mats[i]].map;
+      self.materials[anim[0]].needsUpdate = true;
+      anim[2] = i;
+    }
+  });
+};
 
-});
-
-require.define("/demo/index.js",function(require,module,exports,__dirname,__filename,process,global){var createGame = require('voxel-engine')
-var voxel = require('voxel')
-var toolbar = require('toolbar')
-var skin = require('minecraft-skin')
-var debris = require('voxel-debris')
-var presetSelector = toolbar({el: '#tools'})
-
-var game = window.game = createGame({
-  generate: voxel.generator['Valley'],
-  startingPosition: [185, 300, 0],
-  texturePath: 'textures/',
-  materials: [['grass', 'dirt', 'grass_dirt']],
-  skyColor: 0xffffff,
-  fogScale: 0.8
-})
-
-// Load voxel-pp, then voxel-colorist
-var composer = require('voxel-pp')(game)
-var colorist = require('../')(composer)
-
-// Change presets using the toolbar
-presetSelector.on('select', function(material) {
-  colorist.table('colors/' + material + '.png')
-})
-
-// Take screenshots with the tilde (~) key
-// Using SHIFT+~ will take an unprocessed image
-var image
-window.addEventListener('keydown', function(e) {
-  if (e.keyCode !== 192) return
-  if (image) document.body.removeChild(image)
-  image = colorist.snapshot(e.shiftKey)
-
-  image.style.width = '300px'
-  image.style.height = 'auto'
-  image.style.position = 'absolute'
-  image.style.top = '10px'
-  image.style.left = '10px'
-  image.style.border = '5px solid rgba(50, 50, 50, 0.8)'
-  image.style.zIndex = 999
-  image.style.opacity = 0.9
-
-  document.body.appendChild(image)
-})
-
-// Drag/drop images onto the game to load
-// a new palette
-document.body.ondragover = function(e) {
-  return e.preventDefault() && false
-}
-document.body.ondrop = function(e) {
-  e.preventDefault()
-  e.stopPropagation()
-
-  if (!e.dataTransfer) return false
-
-  var file = e.dataTransfer.files[0]
-
-  if (!file) return false
-  if (!file.type.match(/image/)) return false
-
-  var reader = new FileReader
-  reader.onload = function(e) {
-    colorist.table(e.target.result)
-  };
-  reader.readAsDataURL(file)
-  return false;
-}
-
-// Set up the game
-var container = document.querySelector('#container')
-
-game.appendTo(container)
-
-container.addEventListener('click', function() {
-  game.requestPointerLock(container)
-})
-
-// Characters
-game.controls.yawObject.rotation.y = 1.5
-
-var maxogden = skin(game.THREE, 'maxogden.png').createPlayerObject()
-maxogden.position.set(0, 62, 20)
-game.scene.add(maxogden)
-
-var substack = skin(game.THREE, 'substack.png').createPlayerObject()
-substack.position.set(0, 62, -20)
-game.scene.add(substack)
-
-// Create/explode voxels on click.
-var explode = debris(game, { power : 1.5, yield: 1 })
-game.on('mousedown', function (pos) {
-  if (erase) explode(pos)
-  else game.createBlock(pos, 1)
-})
-
-var erase = true
-window.addEventListener('keydown', function (ev) {
-  if (ev.keyCode === 'X'.charCodeAt(0)) {
-    erase = !erase
+Texture.prototype._isTransparent = function(material) {
+  if (!material.map) return;
+  if (!material.map.image) return;
+  if (material.map.image.nodeName.toLowerCase() === 'img') {
+    material.map.image.onload = function() {
+      if (transparent(this)) {
+        material.transparent = true;
+        material.needsUpdate = true;
+      }
+    };
+  } else {
+    if (transparent(material.map.image)) {
+      material.transparent = true;
+      material.needsUpdate = true;
+    }
   }
-})
+};
 
-function ctrlToggle (ev) { erase = !ev.ctrlKey }
-window.addEventListener('keyup', ctrlToggle)
-window.addEventListener('keydown', ctrlToggle)
+function ext(name) {
+  return (String(name).indexOf('.') !== -1) ? name : name + '.png';
+}
 
-module.exports = game
+// copied from https://github.com/joyent/node/blob/master/lib/util.js#L433
+function isArray(ar) {
+  return Array.isArray(ar) || (typeof ar === 'object' && Object.prototype.toString.call(ar) === '[object Array]');
+}
 
-});
-require("/demo/index.js");
+function hasSubArray(ar) {
+  var has = false;
+  ar.forEach(function(a) { if (isArray(a)) { has = true; return false; } });
+  return has;
+}
+
+function defaults(obj) {
+  [].slice.call(arguments, 1).forEach(function(from) {
+    if (from) for (var k in from) if (obj[k] == null) obj[k] = from[k];
+  });
+  return obj;
+}
+
+},{"three":34,"opaque":68}],62:[function(require,module,exports){module.exports={
+  "MouseEvent" : [
+    "click",
+    "mousedown",
+    "mouseup",
+    "mouseover",
+    "mousemove",
+    "mouseout"
+  ],
+  "KeyBoardEvent" : [
+    "keydown",
+    "keyup",
+    "keypress"
+  ],
+  "MutationEvent" : [
+    "DOMSubtreeModified",
+    "DOMNodeInserted",
+    "DOMNodeRemoved",
+    "DOMNodeRemovedFromDocument",
+    "DOMNodeInsertedIntoDocument",
+    "DOMAttrModified",
+    "DOMCharacterDataModified"
+  ],
+  "HTMLEvent" : [
+    "load",
+    "unload",
+    "abort",
+    "error",
+    "select",
+    "change",
+    "submit",
+    "reset",
+    "focus",
+    "blur",
+    "resize",
+    "scroll"
+  ],
+  "UIEvent" : [
+    "DOMFocusIn",
+    "DOMFocusOut",
+    "DOMActivate"
+  ]
+}
+
+},{}],61:[function(require,module,exports){module.exports={
+  "initEvent" : [
+    "type",
+    "canBubble", 
+    "cancelable"
+  ],
+  "initUIEvent" : [
+    "type",
+    "canBubble", 
+    "cancelable", 
+    "view", 
+    "detail"
+  ],
+  "initMouseEvent" : [
+    "type",
+    "canBubble", 
+    "cancelable", 
+    "view", 
+    "detail", 
+    "screenX", 
+    "screenY", 
+    "clientX", 
+    "clientY", 
+    "ctrlKey", 
+    "altKey", 
+    "shiftKey", 
+    "metaKey", 
+    "button",
+    "relatedTarget"
+  ],
+  "initMutationEvent" : [
+    "type",
+    "canBubble", 
+    "cancelable", 
+    "relatedNode", 
+    "prevValue", 
+    "newValue", 
+    "attrName", 
+    "attrChange"
+  ]
+}
+
+},{}],64:[function(require,module,exports){//Naive meshing (with face culling)
+function CulledMesh(volume, dims) {
+  //Precalculate direction vectors for convenience
+  var dir = new Array(3);
+  for(var i=0; i<3; ++i) {
+    dir[i] = [[0,0,0], [0,0,0]];
+    dir[i][0][(i+1)%3] = 1;
+    dir[i][1][(i+2)%3] = 1;
+  }
+  //March over the volume
+  var vertices = []
+    , faces = []
+    , x = [0,0,0]
+    , B = [[false,true]    //Incrementally update bounds (this is a bit ugly)
+          ,[false,true]
+          ,[false,true]]
+    , n = -dims[0]*dims[1];
+  for(           B[2]=[false,true],x[2]=-1; x[2]<dims[2]; B[2]=[true,(++x[2]<dims[2]-1)])
+  for(n-=dims[0],B[1]=[false,true],x[1]=-1; x[1]<dims[1]; B[1]=[true,(++x[1]<dims[1]-1)])
+  for(n-=1,      B[0]=[false,true],x[0]=-1; x[0]<dims[0]; B[0]=[true,(++x[0]<dims[0]-1)], ++n) {
+    //Read current voxel and 3 neighboring voxels using bounds check results
+    var p =   (B[0][0] && B[1][0] && B[2][0]) ? volume[n]                 : 0
+      , b = [ (B[0][1] && B[1][0] && B[2][0]) ? volume[n+1]               : 0
+            , (B[0][0] && B[1][1] && B[2][0]) ? volume[n+dims[0]]         : 0
+            , (B[0][0] && B[1][0] && B[2][1]) ? volume[n+dims[0]*dims[1]] : 0
+          ];
+    //Generate faces
+    for(var d=0; d<3; ++d)
+    if((!!p) !== (!!b[d])) {
+      var s = !p ? 1 : 0;
+      var t = [x[0],x[1],x[2]]
+        , u = dir[d][s]
+        , v = dir[d][s^1];
+      ++t[d];
+      
+      var vertex_count = vertices.length;
+      vertices.push([t[0],           t[1],           t[2]          ]);
+      vertices.push([t[0]+u[0],      t[1]+u[1],      t[2]+u[2]     ]);
+      vertices.push([t[0]+u[0]+v[0], t[1]+u[1]+v[1], t[2]+u[2]+v[2]]);
+      vertices.push([t[0]     +v[0], t[1]     +v[1], t[2]     +v[2]]);
+      faces.push([vertex_count, vertex_count+1, vertex_count+2, vertex_count+3, s ? b[d] : p]);
+    }
+  }
+  return { vertices:vertices, faces:faces };
+}
+
+
+if(exports) {
+  exports.mesher = CulledMesh;
+}
+
+},{}],65:[function(require,module,exports){var GreedyMesh = (function() {
+//Cache buffer internally
+var mask = new Int32Array(4096);
+
+return function(volume, dims) {
+  var vertices = [], faces = []
+    , dimsX = dims[0]
+    , dimsY = dims[1]
+    , dimsXY = dimsX * dimsY;
+
+  //Sweep over 3-axes
+  for(var d=0; d<3; ++d) {
+    var i, j, k, l, w, W, h, n, c
+      , u = (d+1)%3
+      , v = (d+2)%3
+      , x = [0,0,0]
+      , q = [0,0,0]
+      , du = [0,0,0]
+      , dv = [0,0,0]
+      , dimsD = dims[d]
+      , dimsU = dims[u]
+      , dimsV = dims[v]
+      , qdimsX, qdimsXY
+      , xd
+
+    if (mask.length < dimsU * dimsV) {
+      mask = new Int32Array(dimsU * dimsV);
+    }
+
+    q[d] =  1;
+    x[d] = -1;
+
+    qdimsX  = dimsX  * q[1]
+    qdimsXY = dimsXY * q[2]
+
+    // Compute mask
+    while (x[d] < dimsD) {
+      xd = x[d]
+      n = 0;
+
+      for(x[v] = 0; x[v] < dimsV; ++x[v]) {
+        for(x[u] = 0; x[u] < dimsU; ++x[u], ++n) {
+          var a = xd >= 0      && volume[x[0]      + dimsX * x[1]          + dimsXY * x[2]          ]
+            , b = xd < dimsD-1 && volume[x[0]+q[0] + dimsX * x[1] + qdimsX + dimsXY * x[2] + qdimsXY]
+          if (a ? b : !b) {
+            mask[n] = 0; continue;
+          }
+          mask[n] = a ? a : -b;
+        }
+      }
+
+      ++x[d];
+
+      // Generate mesh for mask using lexicographic ordering
+      n = 0;
+      for (j=0; j < dimsV; ++j) {
+        for (i=0; i < dimsU; ) {
+          c = mask[n];
+          if (!c) {
+            i++;  n++; continue;
+          }
+
+          //Compute width
+          w = 1;
+          while (c === mask[n+w] && i+w < dimsU) w++;
+
+          //Compute height (this is slightly awkward)
+          for (h=1; j+h < dimsV; ++h) {
+            k = 0;
+            while (k < w && c === mask[n+k+h*dimsU]) k++
+            if (k < w) break;
+          }
+
+          // Add quad
+          // The du/dv arrays are reused/reset
+          // for each iteration.
+          du[d] = 0; dv[d] = 0;
+          x[u]  = i;  x[v] = j;
+
+          if (c > 0) {
+            dv[v] = h; dv[u] = 0;
+            du[u] = w; du[v] = 0;
+          } else {
+            c = -c;
+            du[v] = h; du[u] = 0;
+            dv[u] = w; dv[v] = 0;
+          }
+          var vertex_count = vertices.length;
+          vertices.push([x[0],             x[1],             x[2]            ]);
+          vertices.push([x[0]+du[0],       x[1]+du[1],       x[2]+du[2]      ]);
+          vertices.push([x[0]+du[0]+dv[0], x[1]+du[1]+dv[1], x[2]+du[2]+dv[2]]);
+          vertices.push([x[0]      +dv[0], x[1]      +dv[1], x[2]      +dv[2]]);
+          faces.push([vertex_count, vertex_count+1, vertex_count+2, vertex_count+3, c]);
+
+          //Zero-out mask
+          W = n + w;
+          for(l=0; l<h; ++l) {
+            for(k=n; k<W; ++k) {
+              mask[k+l*dimsU] = 0;
+            }
+          }
+
+          //Increment counters and continue
+          i += w; n += w;
+        }
+      }
+    }
+  }
+  return { vertices:vertices, faces:faces };
+}
 })();
+
+if(exports) {
+  exports.mesher = GreedyMesh;
+}
+
+},{}],66:[function(require,module,exports){"use strict";
+
+var MonotoneMesh = (function(){
+
+function MonotonePolygon(c, v, ul, ur) {
+  this.color  = c;
+  this.left   = [[ul, v]];
+  this.right  = [[ur, v]];
+};
+
+MonotonePolygon.prototype.close_off = function(v) {
+  this.left.push([ this.left[this.left.length-1][0], v ]);
+  this.right.push([ this.right[this.right.length-1][0], v ]);
+};
+
+MonotonePolygon.prototype.merge_run = function(v, u_l, u_r) {
+  var l = this.left[this.left.length-1][0]
+    , r = this.right[this.right.length-1][0]; 
+  if(l !== u_l) {
+    this.left.push([ l, v ]);
+    this.left.push([ u_l, v ]);
+  }
+  if(r !== u_r) {
+    this.right.push([ r, v ]);
+    this.right.push([ u_r, v ]);
+  }
+};
+
+
+return function(volume, dims) {
+  function f(i,j,k) {
+    return volume[i + dims[0] * (j + dims[1] * k)];
+  }
+  //Sweep over 3-axes
+  var vertices = [], faces = [];
+  for(var d=0; d<3; ++d) {
+    var i, j, k
+      , u = (d+1)%3   //u and v are orthogonal directions to d
+      , v = (d+2)%3
+      , x = new Int32Array(3)
+      , q = new Int32Array(3)
+      , runs = new Int32Array(2 * (dims[u]+1))
+      , frontier = new Int32Array(dims[u])  //Frontier is list of pointers to polygons
+      , next_frontier = new Int32Array(dims[u])
+      , left_index = new Int32Array(2 * dims[v])
+      , right_index = new Int32Array(2 * dims[v])
+      , stack = new Int32Array(24 * dims[v])
+      , delta = [[0,0], [0,0]];
+    //q points along d-direction
+    q[d] = 1;
+    //Initialize sentinel
+    for(x[d]=-1; x[d]<dims[d]; ) {
+      // --- Perform monotone polygon subdivision ---
+      var n = 0
+        , polygons = []
+        , nf = 0;
+      for(x[v]=0; x[v]<dims[v]; ++x[v]) {
+        //Make one pass over the u-scan line of the volume to run-length encode polygon
+        var nr = 0, p = 0, c = 0;
+        for(x[u]=0; x[u]<dims[u]; ++x[u], p = c) {
+          //Compute the type for this face
+          var a = (0    <= x[d]      ? f(x[0],      x[1],      x[2])      : 0)
+            , b = (x[d] <  dims[d]-1 ? f(x[0]+q[0], x[1]+q[1], x[2]+q[2]) : 0);
+          c = a;
+          if((!a) === (!b)) {
+            c = 0;
+          } else if(!a) {
+            c = -b;
+          }
+          //If cell type doesn't match, start a new run
+          if(p !== c) {
+            runs[nr++] = x[u];
+            runs[nr++] = c;
+          }
+        }
+        //Add sentinel run
+        runs[nr++] = dims[u];
+        runs[nr++] = 0;
+        //Update frontier by merging runs
+        var fp = 0;
+        for(var i=0, j=0; i<nf && j<nr-2; ) {
+          var p    = polygons[frontier[i]]
+            , p_l  = p.left[p.left.length-1][0]
+            , p_r  = p.right[p.right.length-1][0]
+            , p_c  = p.color
+            , r_l  = runs[j]    //Start of run
+            , r_r  = runs[j+2]  //End of run
+            , r_c  = runs[j+1]; //Color of run
+          //Check if we can merge run with polygon
+          if(r_r > p_l && p_r > r_l && r_c === p_c) {
+            //Merge run
+            p.merge_run(x[v], r_l, r_r);
+            //Insert polygon into frontier
+            next_frontier[fp++] = frontier[i];
+            ++i;
+            j += 2;
+          } else {
+            //Check if we need to advance the run pointer
+            if(r_r <= p_r) {
+              if(!!r_c) {
+                var n_poly = new MonotonePolygon(r_c, x[v], r_l, r_r);
+                next_frontier[fp++] = polygons.length;
+                polygons.push(n_poly);
+              }
+              j += 2;
+            }
+            //Check if we need to advance the frontier pointer
+            if(p_r <= r_r) {
+              p.close_off(x[v]);
+              ++i;
+            }
+          }
+        }
+        //Close off any residual polygons
+        for(; i<nf; ++i) {
+          polygons[frontier[i]].close_off(x[v]);
+        }
+        //Add any extra runs to frontier
+        for(; j<nr-2; j+=2) {
+          var r_l  = runs[j]
+            , r_r  = runs[j+2]
+            , r_c  = runs[j+1];
+          if(!!r_c) {
+            var n_poly = new MonotonePolygon(r_c, x[v], r_l, r_r);
+            next_frontier[fp++] = polygons.length;
+            polygons.push(n_poly);
+          }
+        }
+        //Swap frontiers
+        var tmp = next_frontier;
+        next_frontier = frontier;
+        frontier = tmp;
+        nf = fp;
+      }
+      //Close off frontier
+      for(var i=0; i<nf; ++i) {
+        var p = polygons[frontier[i]];
+        p.close_off(dims[v]);
+      }
+      // --- Monotone subdivision of polygon is complete at this point ---
+      
+      x[d]++;
+      
+      //Now we just need to triangulate each monotone polygon
+      for(var i=0; i<polygons.length; ++i) {
+        var p = polygons[i]
+          , c = p.color
+          , flipped = false;
+        if(c < 0) {
+          flipped = true;
+          c = -c;
+        }
+        for(var j=0; j<p.left.length; ++j) {
+          left_index[j] = vertices.length;
+          var y = [0.0,0.0,0.0]
+            , z = p.left[j];
+          y[d] = x[d];
+          y[u] = z[0];
+          y[v] = z[1];
+          vertices.push(y);
+        }
+        for(var j=0; j<p.right.length; ++j) {
+          right_index[j] = vertices.length;
+          var y = [0.0,0.0,0.0]
+            , z = p.right[j];
+          y[d] = x[d];
+          y[u] = z[0];
+          y[v] = z[1];
+          vertices.push(y);
+        }
+        //Triangulate the monotone polygon
+        var bottom = 0
+          , top = 0
+          , l_i = 1
+          , r_i = 1
+          , side = true;  //true = right, false = left
+        
+        stack[top++] = left_index[0];
+        stack[top++] = p.left[0][0];
+        stack[top++] = p.left[0][1];
+        
+        stack[top++] = right_index[0];
+        stack[top++] = p.right[0][0];
+        stack[top++] = p.right[0][1];
+        
+        while(l_i < p.left.length || r_i < p.right.length) {
+          //Compute next side
+          var n_side = false;
+          if(l_i === p.left.length) {
+            n_side = true;
+          } else if(r_i !== p.right.length) {
+            var l = p.left[l_i]
+              , r = p.right[r_i];
+            n_side = l[1] > r[1];
+          }
+          var idx = n_side ? right_index[r_i] : left_index[l_i]
+            , vert = n_side ? p.right[r_i] : p.left[l_i];
+          if(n_side !== side) {
+            //Opposite side
+            while(bottom+3 < top) {
+              if(flipped === n_side) {
+                faces.push([ stack[bottom], stack[bottom+3], idx, c]);
+              } else {
+                faces.push([ stack[bottom+3], stack[bottom], idx, c]);              
+              }
+              bottom += 3;
+            }
+          } else {
+            //Same side
+            while(bottom+3 < top) {
+              //Compute convexity
+              for(var j=0; j<2; ++j)
+              for(var k=0; k<2; ++k) {
+                delta[j][k] = stack[top-3*(j+1)+k+1] - vert[k];
+              }
+              var det = delta[0][0] * delta[1][1] - delta[1][0] * delta[0][1];
+              if(n_side === (det > 0)) {
+                break;
+              }
+              if(det !== 0) {
+                if(flipped === n_side) {
+                  faces.push([ stack[top-3], stack[top-6], idx, c ]);
+                } else {
+                  faces.push([ stack[top-6], stack[top-3], idx, c ]);
+                }
+              }
+              top -= 3;
+            }
+          }
+          //Push vertex
+          stack[top++] = idx;
+          stack[top++] = vert[0];
+          stack[top++] = vert[1];
+          //Update loop index
+          if(n_side) {
+            ++r_i;
+          } else {
+            ++l_i;
+          }
+          side = n_side;
+        }
+      }
+    }
+  }
+  return { vertices:vertices, faces:faces };
+}
+})();
+
+if(exports) {
+  exports.mesher = MonotoneMesh;
+}
+
+},{}],67:[function(require,module,exports){//The stupidest possible way to generate a Minecraft mesh (I think)
+function StupidMesh(volume, dims) {
+  var vertices = [], faces = [], x = [0,0,0], n = 0;
+  for(x[2]=0; x[2]<dims[2]; ++x[2])
+  for(x[1]=0; x[1]<dims[1]; ++x[1])
+  for(x[0]=0; x[0]<dims[0]; ++x[0], ++n)
+  if(!!volume[n]) {
+    for(var d=0; d<3; ++d) {
+      var t = [x[0], x[1], x[2]]
+        , u = [0,0,0]
+        , v = [0,0,0];
+      u[(d+1)%3] = 1;
+      v[(d+2)%3] = 1;
+      for(var s=0; s<2; ++s) {
+        t[d] = x[d] + s;
+        var tmp = u;
+        u = v;
+        v = tmp;
+        var vertex_count = vertices.length;
+        vertices.push([t[0],           t[1],           t[2]          ]);
+        vertices.push([t[0]+u[0],      t[1]+u[1],      t[2]+u[2]     ]);
+        vertices.push([t[0]+u[0]+v[0], t[1]+u[1]+v[1], t[2]+u[2]+v[2]]);
+        vertices.push([t[0]     +v[0], t[1]     +v[1], t[2]     +v[2]]);
+        faces.push([vertex_count, vertex_count+1, vertex_count+2, vertex_count+3, volume[n]]);
+      }
+    }
+  }
+  return { vertices:vertices, faces:faces };
+}
+
+
+if(exports) {
+  exports.mesher = StupidMesh;
+}
+
+},{}],68:[function(require,module,exports){function opaque(image) {
+  var canvas, ctx
+
+  if (image.nodeName.toLowerCase() === 'img') {
+    canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    ctx = canvas.getContext('2d')
+    ctx.drawImage(image, 0, 0)
+  } else {
+    canvas = image
+    ctx = canvas.getContext('2d')
+  }
+
+  var imageData = ctx.getImageData(0, 0, canvas.height, canvas.width)
+    , data = imageData.data
+
+  for (var i = 3, l = data.length; i < l; i += 4)
+    if (data[i] !== 255)
+      return false
+
+  return true
+};
+
+module.exports = opaque
+module.exports.opaque = opaque
+module.exports.transparent = function(image) {
+  return !opaque(image)
+};
+},{}],60:[function(require,module,exports){module.exports = Tree
+
+var aabb = require('aabb-3d')
+
+function Tree(size, bbox, parent) {
+  this.listeners = {}
+  this.size = size
+  this.bbox = bbox
+  this.parent = parent
+  this.children = []
+}
+
+var cons = Tree
+  , proto = cons.prototype
+
+proto.add = function(event, bbox, listener) {
+  if(!this.parent && !this.contains(bbox)) {
+    return this.expand(bbox).add(event, bbox, listener)
+  }
+
+  for(var i = 0, len = this.children.length; i < len; ++i) {
+    if(this.children[i].contains(bbox)) {
+      return this.children[i].add(event, bbox, listener)
+    }
+  }
+
+  var size = this.size / 2
+
+  if(size > this.min_size && bbox.vec[0] < size && bbox.vec[1] < size && bbox.vec[2] < size) {
+    // if it fits into a child node, make that childnode
+    if(Math.floor(bbox.x0() / size) === Math.floor(bbox.x1() / size) &&
+       Math.floor(bbox.y0() / size) === Math.floor(bbox.y1() / size) &&
+       Math.floor(bbox.z0() / size) === Math.floor(bbox.z1() / size)) {
+      var inst = new this.constructor(
+          size
+        , aabb([
+              Math.floor(bbox.x0() / size) * size
+            , Math.floor(bbox.y0() / size) * size
+            , Math.floor(bbox.z0() / size) * size
+            ]
+          , [size, size, size]
+          )
+        , this
+      )
+      this.children.push(inst)
+      return inst.add(event, bbox, listener)
+    }
+  }
+
+  (this.listeners[event] = this.listeners[event] || [])
+    .push({bbox: bbox, func: listener})
+}
+
+proto.contains = function(bbox) {
+  return bbox.x0() >= this.bbox.x0() &&
+         bbox.y0() >= this.bbox.y0() &&
+         bbox.z0() >= this.bbox.z0() &&
+         bbox.x1() <= this.bbox.x1() &&
+         bbox.y1() <= this.bbox.y1() &&
+         bbox.z1() <= this.bbox.z1()
+}
+
+proto.expand = function(bbox) {
+  var size = this.size
+    , new_size = size * 2
+    , expanded = this.bbox.expand(bbox)
+    , new_i = Math.floor(bbox.x0() / size)
+    , new_j = Math.floor(bbox.y0() / size)
+    , new_k = Math.floor(bbox.z0() / size)
+    , cur_i = Math.floor(this.bbox.x0() / size)
+    , cur_j = Math.floor(this.bbox.y0() / size)
+    , cur_k = Math.floor(this.bbox.z0() / size)
+    , new_base = [
+        new_i - cur_i >= 0 ? cur_i : cur_i - 1
+      , new_j - cur_j >= 0 ? cur_j : cur_j - 1
+      , new_k - cur_k >= 0 ? cur_k : cur_k - 1
+      ].map(function(ii) { return ii * size })
+    , new_bbox = aabb(new_base, [new_size, new_size, new_size])
+    , new_root = new this.constructor(new_size, new_bbox)
+    , self = this
+
+  this.parent = new_root
+  this.grow(this.parent)
+
+  new_root.children.push(self)
+
+  return new_root
+}
+
+proto.remove = function(event, listener) {
+  var list = this.listeners[event]
+  if(list) {
+    for(var i = 0, len = list.length; i < len; ++i) {
+      if(list[i].func === listener)
+        break
+    }
+
+    if(i !== len) {
+      list.splice(i, 1)
+    }
+  }
+  for(var i = 0, len = this.children.length; i < len; ++i) {
+    this.children[i].remove(event, listener)
+  }
+}
+
+proto.send = function(event, bbox, args) {
+  for(var i = 0, len = this.children.length; i < len; ++i) {
+    if(bbox.intersects(this.children[i].bbox)) {
+      this.children[i].send(event, bbox, args)
+    }
+  }
+
+  var list = this.listeners[event]
+  if(!list) {
+    return
+  }
+
+  for(var i = 0, len = list.length; i < len; ++i) {
+    if(list[i].bbox.intersects(bbox)) {
+      list[i].func.apply(null, args)
+    }
+  }
+}
+
+},{"aabb-3d":35}],52:[function(require,module,exports){var voxelMesh = require('voxel-mesh');
+var voxel = require('voxel');
+
+var EventEmitter = require('events').EventEmitter;
+var inherits = require('inherits');
+
+var indexer = require('./indexer');
+
+module.exports = ChunkMatrix;
+inherits(ChunkMatrix, EventEmitter);
+
+function ChunkMatrix (game, generator) {
+    var T = game.THREE;
+    var size = game.cubeSize;
+    
+    var r = this.rotationObject = new T.Object3D;
+    var t = this.translationObject = new T.Object3D;
+    var inner = new T.Object3D;
+    
+    inner.add(r);
+    t.add(inner);
+    game.scene.add(t);
+    
+    inner.position.x = size / 2;
+    inner.position.z = size / 2;
+    
+    this.generator = generator || function (x,y,z) { return 0 };
+    this.rotation = r.rotation;
+    this.position = t.position;
+    this.chunks = {};
+    this.meshes = {};
+    this.game = game;
+    this.indexer = indexer(game);
+    
+    this._update('0|0|0');
+}
+
+ChunkMatrix.prototype.generateChunk = function (ckey) {
+    if (Array.isArray(ckey)) ckey = ckey.join('|');
+    var xyz = ckey.split('|');
+    
+    var d = this.game.chunkSize;
+    var low = [ xyz[0]*d, xyz[1]*d, xyz[2]*d ];
+    var high = [ low[0]+d, low[1]+d, low[2]+d ];
+    
+    var chunk = voxel.generate(low, high, this.generator);
+    this.chunks[ckey] = chunk;
+    return chunk;
+};
+
+ChunkMatrix.prototype.setBlock = function (pos, value) {
+    var ci = this.indexer.chunk(pos);
+    var vi = this.indexer.voxel(pos);
+    return this.setByIndex(ci, vi, value);
+};
+
+ChunkMatrix.prototype.getBlock = function (pos) {
+    var ci = this.indexer.chunk(pos);
+    var vi = this.indexer.voxel(pos);
+    return this.getByIndex(ci, vi);
+};
+
+ChunkMatrix.prototype.setByIndex = function (ci, vi, value) {
+    var ckey = typeof ci === 'object' ? ci.join('|') : ci
+    if (!this.chunks[ckey]) this.generateChunk(ckey);
+    this.chunks[ckey].voxels[vi] = value;
+    this._update(ckey);
+};
+
+ChunkMatrix.prototype.getByIndex = function (ci, vi) {
+    var ckey = typeof ci === 'object' ? ci.join('|') : ci;
+    if (!this.chunks[ckey]) return undefined;
+    return this.chunks[ckey].voxels[vi];
+};
+    
+ChunkMatrix.prototype._update = function (ci) {
+    var game = this.game;
+    var T = game.THREE;
+    var size = game.cubeSize;
+    var csize = size * game.chunkSize;
+    var scale = new T.Vector3(size, size, size);
+    
+    var ckey = typeof ci === 'object' ? ci.join('|') : ci;
+    var chunk = this.chunks[ckey];
+    if (!chunk) return;
+    
+    var mesh = voxelMesh(chunk, voxel.meshers.greedy, scale);
+    
+    if (this.meshes[ckey]) {
+        var s = this.meshes[ckey].surfaceMesh || this.meshes[ckey].wireMesh;
+        delete this.meshes[s.id];
+        this.emit('remove', s);
+        this.rotationObject.remove(s);
+    }
+    this.meshes[ckey] = mesh;
+    
+    if (game.meshType === 'wireMesh') {
+        mesh.createWireMesh();
+    }
+    else {
+        mesh.createSurfaceMesh(game.material);
+    }
+    
+    var surface = mesh.surfaceMesh || mesh.wireMesh;
+    surface.position.x = -size / 2;
+    surface.position.z = -size / 2;
+    
+    var xyz = ckey.split('|');
+    surface.position.x += xyz[0] * csize;
+    surface.position.y += xyz[1] * csize;
+    surface.position.z += xyz[2] * csize;
+    
+    this.rotationObject.add(surface);
+    
+    game.applyTextures(mesh.geometry);
+    
+    this.emit('add', surface, this);
+    this.emit('update', chunk, ckey);
+};
+
+},{"events":18,"./indexer":47,"voxel":53,"voxel-mesh":32,"inherits":27}],63:[function(require,module,exports){var events = require('events')
+var inherits = require('inherits')
+
+module.exports = function(opts) {
+  return new Chunker(opts)
+}
+
+module.exports.Chunker = Chunker
+
+function Chunker(opts) {
+  this.distance = opts.chunkDistance || 2
+  this.chunkSize = opts.chunkSize || 32
+  this.cubeSize = opts.cubeSize || 25
+  this.generateVoxelChunk = opts.generateVoxelChunk
+  this.chunks = {}
+  this.meshes = {}
+}
+
+inherits(Chunker, events.EventEmitter)
+
+Chunker.prototype.nearbyChunks = function(position, distance) {
+  var current = this.chunkAtPosition(position)
+  var x = current[0]
+  var y = current[1]
+  var z = current[2]
+  var dist = distance || this.distance
+  var nearby = []
+  for (var cx = (x - dist); cx !== (x + dist); ++cx) {
+    for (var cy = (y - dist); cy !== (y + dist); ++cy) {
+      for (var cz = (z - dist); cz !== (z + dist); ++cz) {
+        nearby.push([cx, cy, cz])
+      }
+    }
+  }
+  return nearby
+}
+
+Chunker.prototype.requestMissingChunks = function(position) {
+  var self = this
+  this.nearbyChunks(position).map(function(chunk) {
+    if (!self.chunks[chunk.join('|')]) {
+      self.emit('missingChunk', chunk)
+    }
+  })
+}
+
+Chunker.prototype.getBounds = function(x, y, z) {
+  var size = this.chunkSize
+  var low = [x * size, y * size, z * size]
+  var high = [low[0] + size, low[1] + size, low[2] + size]
+  return [low, high]
+}
+
+Chunker.prototype.generateChunk = function(x, y, z) {
+  var self = this
+  var bounds = this.getBounds(x, y, z)
+  var chunk = this.generateVoxelChunk(bounds[0], bounds[1], x, y, z)
+  var position = [x, y, z]
+  chunk.position = position
+  this.chunks[position.join('|')] = chunk
+  return chunk
+}
+
+Chunker.prototype.chunkAtPosition = function(position) {
+  var chunkSize = this.chunkSize
+  var cubeSize = this.cubeSize
+  var cx = position.x / cubeSize / chunkSize
+  var cy = position.y / cubeSize / chunkSize
+  var cz = position.z / cubeSize / chunkSize
+  var chunkPos = [Math.floor(cx), Math.floor(cy), Math.floor(cz)]
+  return chunkPos
+};
+
+Chunker.prototype.voxelIndex = function(voxelVector) {
+  var size = this.chunkSize
+  var vidx = voxelVector.x + voxelVector.y*size + voxelVector.z*size*size
+  return vidx
+}
+
+Chunker.prototype.voxelIndexFromPosition = function(pos) {
+  var v = this.voxelVector(pos)
+  return this.voxelIndex(v)
+}
+
+Chunker.prototype.voxelAtPosition = function(pos, val) {
+  var ckey = this.chunkAtPosition(pos).join('|')
+  var chunk = this.chunks[ckey]
+  if (!chunk) return false
+  var vector = this.voxelVector(pos)
+  var vidx = this.voxelIndex(vector)
+  if (!vidx && vidx !== 0) return false
+  if (typeof val !== 'undefined') {
+    chunk.voxels[vidx] = val
+  }
+  var v = chunk.voxels[vidx]
+  return v
+}
+
+Chunker.prototype.voxelVector = function(pos) {
+  var size = this.chunkSize
+  var cubeSize = this.cubeSize
+  var vx = (size + Math.floor(pos.x / cubeSize) % size) % size
+  var vy = (size + Math.floor(pos.y / cubeSize) % size) % size
+  var vz = (size + Math.floor(pos.z / cubeSize) % size) % size
+  return {x: Math.abs(vx), y: Math.abs(vy), z: Math.abs(vz)}
+};
+
+},{"events":18,"inherits":27}],57:[function(require,module,exports){module.exports = dragstream
+
+var Stream = require('stream')
+  , read = require('domnode-dom').createReadStream
+  , through = require('through')
+
+function dragstream(el) {
+  var body = el.ownerDocument.body
+    , down = read(el, 'mousedown')
+    , up = read(body, 'mouseup', false)
+    , move = read(body, 'mousemove', false)
+    , anchor = {x: 0, y: 0, t: 0}
+    , drag = through(on_move)
+
+  // default to "paused"
+  drag.pause()
+
+  down.on('data', on_down)
+  up.on('data', on_up)
+
+  return move.pipe(drag)
+
+  // listeners:
+
+  function on_move(ev) {
+    if(drag.paused) return
+
+    drag.emit('data', datum(
+        ev.screenX - anchor.x
+      , ev.screenY - anchor.y
+      , +new Date
+    ))
+
+    anchor.x = ev.screenX
+    anchor.y = ev.screenY
+  }
+
+  function on_down(ev) {
+    anchor.x = ev.screenX
+    anchor.y = ev.screenY
+    anchor.t = +new Date
+    drag.resume()
+    drag.emit('data', datum(
+        anchor.x
+      , anchor.y
+      , anchor.t
+    ))
+  }
+
+  function on_up(ev) {
+    drag.pause()
+    drag.emit('data', datum(
+        ev.screenX - anchor.x
+      , ev.screenY - anchor.y
+      , +new Date
+    ))
+  }
+
+  function datum(dx, dy, when) {
+    return {
+      dx: dx
+    , dy: dy
+    , dt: when - anchor.t
+    }
+  }
+}
+
+},{"stream":45,"domnode-dom":69,"through":70}],70:[function(require,module,exports){(function(process){var Stream = require('stream')
+
+// through
+//
+// a stream that does nothing but re-emit the input.
+// useful for aggregating a series of changing but not ending streams into one stream)
+
+
+
+exports = module.exports = through
+through.through = through
+
+//create a readable writable stream.
+
+function through (write, end) {
+  write = write || function (data) { this.emit('data', data) }
+  end = end || function () { this.emit('end') }
+
+  var ended = false, destroyed = false
+  var stream = new Stream(), buffer = []
+  stream.buffer = buffer
+  stream.readable = stream.writable = true
+  stream.paused = false
+  stream.write = function (data) {
+    write.call(this, data)
+    return !stream.paused
+  }
+
+  function drain() {
+    while(buffer.length && !stream.paused) {
+      var data = buffer.shift()
+      if(null === data)
+        return stream.emit('end')
+      else
+        stream.emit('data', data)
+    }
+  }
+
+  stream.queue = function (data) {
+    buffer.push(data)
+    drain()
+  }
+
+  //this will be registered as the first 'end' listener
+  //must call destroy next tick, to make sure we're after any
+  //stream piped from here.
+  //this is only a problem if end is not emitted synchronously.
+  //a nicer way to do this is to make sure this is the last listener for 'end'
+
+  stream.on('end', function () {
+    stream.readable = false
+    if(!stream.writable)
+      process.nextTick(function () {
+        stream.destroy()
+      })
+  })
+
+  function _end () {
+    stream.writable = false
+    end.call(stream)
+    if(!stream.readable)
+      stream.destroy()
+  }
+
+  stream.end = function (data) {
+    if(ended) return
+    ended = true
+    if(arguments.length) stream.write(data)
+    _end() // will emit or queue
+  }
+
+  stream.destroy = function () {
+    if(destroyed) return
+    destroyed = true
+    ended = true
+    buffer.length = 0
+    stream.writable = stream.readable = false
+    stream.emit('close')
+  }
+
+  stream.pause = function () {
+    if(stream.paused) return
+    stream.paused = true
+    stream.emit('pause')
+  }
+  stream.resume = function () {
+    if(stream.paused) {
+      stream.paused = false
+    }
+    drain()
+    //may have become paused again,
+    //as drain emits 'data'.
+    if(!stream.paused)
+      stream.emit('drain')
+  }
+  return stream
+}
+
+
+})(require("__browserify_process"))
+},{"stream":45,"__browserify_process":16}],69:[function(require,module,exports){module.exports = require('./lib/index')
+
+},{"./lib/index":71}],71:[function(require,module,exports){var WriteStream = require('./writable')
+  , ReadStream = require('./readable')
+  , DOMStream = {}
+
+DOMStream.WriteStream = WriteStream
+DOMStream.ReadStream = ReadStream
+
+DOMStream.createAppendStream = function(el, mimetype) {
+  return new DOMStream.WriteStream(
+      el
+    , DOMStream.WriteStream.APPEND
+    , mimetype
+  )
+}
+
+DOMStream.createWriteStream = function(el, mimetype) {
+  return new DOMStream.WriteStream(
+      el
+    , DOMStream.WriteStream.WRITE
+    , mimetype
+  )
+}
+
+DOMStream.createReadStream =
+DOMStream.createEventStream = function(el, type, preventDefault) {
+  preventDefault = preventDefault === undefined ? true : preventDefault
+
+  return new DOMStream.ReadStream(
+      el
+    , type
+    , preventDefault
+  )
+}
+
+module.exports = DOMStream
+
+
+},{"./writable":72,"./readable":73}],73:[function(require,module,exports){module.exports = DOMStream
+
+var Stream = require('stream').Stream
+
+var listener = function(el, type, onmsg) {
+  return el.addEventListener(type, onmsg, false)
+}
+
+if(typeof $ !== 'undefined')
+  listener = function(el, type, onmsg) {
+    return el = $(el)[type](onmsg)
+  }
+
+if(typeof document !== 'undefined' && !document.createElement('div').addEventListener)
+  listener = function(el, type, onmsg) {
+    return el.attachEvent('on'+type, onmsg)
+  }
+
+function DOMStream(el, eventType, shouldPreventDefault) {
+  this.el = el
+  this.eventType = eventType
+  this.shouldPreventDefault = shouldPreventDefault
+
+  var self = this
+
+  if(el && this.eventType)
+    listener(
+        this.el
+      , this.eventType
+      , function() { return self.listen.apply(self, arguments) }
+    )
+
+  Stream.call(this)
+}
+
+var cons = DOMStream
+  , proto = cons.prototype = new Stream
+
+proto.constructor = cons
+
+proto.listen = function(ev) { 
+  if(this.shouldPreventDefault)
+    ev.preventDefault ? ev.preventDefault() : (ev.returnValue = false)
+
+  var collectData = 
+    this.eventType === 'submit' ||
+    this.eventType === 'change' ||
+    this.eventType === 'keydown' ||
+    this.eventType === 'keyup' ||
+    this.eventType === 'input'
+
+  if(collectData) {
+    if(this.el.tagName.toUpperCase() === 'FORM')
+      return this.handleFormSubmit(ev)
+
+    return this.emit('data', valueFromElement(this.el))
+  }
+
+  this.emit('data', ev) 
+}
+
+proto.handleFormSubmit = function(ev) {
+  var elements = []
+
+  if(this.el.querySelectorAll) {
+    elements = this.el.querySelectorAll('input,textarea,select')
+  } else {
+    var inputs = {'INPUT':true, 'TEXTAREA':true, 'SELECT':true}
+
+    var recurse = function(el) {
+      for(var i = 0, len = el.childNodes.length; i < len; ++i) {
+        if(el.childNodes[i].tagName) {
+          if(inputs[el.childNodes[i].tagName.toUpperCase()]) {
+            elements.push(el)
+          } else {
+            recurse(el.childNodes[i])
+          }
+        }
+      }
+    }
+
+    recurse(this.el)
+  }
+
+  var output = {}
+    , attr
+    , val
+
+  for(var i = 0, len = elements.length; i < len; ++i) {
+    attr = elements[i].getAttribute('name')
+    val = valueFromElement(elements[i])
+
+    output[attr] = val
+  }
+
+  return this.emit('data', output)
+}
+
+function valueFromElement(el) {
+  switch(el.getAttribute('type')) {
+    case 'radio':
+      return el.checked ? el.value : null
+    case 'checkbox':
+      return 'data', el.checked
+  }
+  return el.value
+}
+
+},{"stream":45}],72:[function(require,module,exports){module.exports = DOMStream
+
+var Stream = require('stream').Stream
+
+function DOMStream(el, mode, mimetype) {
+  this.el = el
+  this.mode = mode
+  this.mimetype = mimetype || 'text/html'
+
+  Stream.call(this)
+}
+
+var cons = DOMStream
+  , proto = cons.prototype = new Stream
+
+proto.constructor = cons
+
+cons.APPEND = 0
+cons.WRITE = 1
+
+proto.writable = true
+
+proto.setMimetype = function(mime) {
+  this.mimetype = mime
+}
+
+proto.write = function(data) {
+  var result = (this.mode === cons.APPEND) ? this.append(data) : this.insert(data)
+  this.emit('data', this.el.childNodes)
+  return result
+}
+
+proto.insert = function(data) {
+  this.el.innerHTML = ''
+  return this.append(data)
+}
+
+proto.append = function(data) {
+  var result = this[this.resolveMimetypeHandler()](data)
+
+  for(var i = 0, len = result.length; i < len; ++i) {
+    this.el.appendChild(result[i])
+  }
+
+  return true
+}
+
+proto.resolveMimetypeHandler = function() {
+  var type = this.mimetype.replace(/(\/\w)/, function(x) {
+    return x.slice(1).toUpperCase()
+  })
+  type = type.charAt(0).toUpperCase() + type.slice(1)
+
+  return 'construct'+type
+}
+
+proto.constructTextHtml = function(data) {
+  var isTableFragment = /(tr|td|th)/.test(data) && !/table/.test(data)
+    , div
+
+  if(isTableFragment) {
+    // wuh-oh.
+    div = document.createElement('table')
+  }
+
+  div = div || document.createElement('div')
+  div.innerHTML = data 
+
+  return [].slice.call(div.childNodes)
+}
+
+proto.constructTextPlain = function(data) {
+  var textNode = document.createTextNode(data)
+
+  return [textNode]
+}
+
+},{"stream":45}]},{},[1]);
