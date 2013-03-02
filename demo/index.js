@@ -1,17 +1,19 @@
 var createGame = require('voxel-engine')
 var voxel = require('voxel')
 var toolbar = require('toolbar')
-var skin = require('minecraft-skin')
-var debris = require('voxel-debris')
+var player = require('voxel-player')
 var presetSelector = toolbar({el: '#tools'})
 
 var game = window.game = createGame({
-  generate: voxel.generator['Valley'],
-  startingPosition: [185, 300, 0],
+  generate: voxel.generator.Valley,
+  chunkDistance: 2,
+  materials: [
+    ['grass', 'dirt', 'grass_dirt'],
+    'grass'
+  ],
   texturePath: 'textures/',
-  materials: [['grass', 'dirt', 'grass_dirt']],
-  skyColor: 0xffffff,
-  fogScale: 0.8
+  worldOrigin: [0, 0, 0],
+  controls: { discreteFire: true }
 })
 
 // Load voxel-pp, then voxel-colorist
@@ -67,42 +69,29 @@ document.body.ondrop = function(e) {
   return false;
 }
 
-// Set up the game
 var container = document.querySelector('#container')
 
 game.appendTo(container)
 
-container.addEventListener('click', function() {
-  game.requestPointerLock(container)
-})
+// create the player from a minecraft skin file and tell the
+// game to use it as the main player
+var createPlayer = player(game)
+var substack = createPlayer('substack.png')
+substack.possess()
+substack.yaw.position.set(2, 14, 4)
 
-// Characters
-game.controls.yawObject.rotation.y = 1.5
-
-var maxogden = skin(game.THREE, 'maxogden.png').createPlayerObject()
-maxogden.position.set(0, 62, 20)
-game.scene.add(maxogden)
-
-var substack = skin(game.THREE, 'substack.png').createPlayerObject()
-substack.position.set(0, 62, -20)
-game.scene.add(substack)
-
-// Create/explode voxels on click.
-var explode = debris(game, { power : 1.5, yield: 1 })
-game.on('mousedown', function (pos) {
-  if (erase) explode(pos)
-  else game.createBlock(pos, 1)
-})
-
-var erase = true
+// toggle between first and third person modes
 window.addEventListener('keydown', function (ev) {
-  if (ev.keyCode === 'X'.charCodeAt(0)) {
-    erase = !erase
+  if (ev.keyCode === 'R'.charCodeAt(0)) substack.toggle()
+})
+
+game.on('fire', function(target, state) {
+  var point = game.raycast()
+  if (!point) return
+  var erase = !state.firealt && !state.alt
+  if (erase) {
+    game.setBlock(point.position, 0)
+  } else {
+    game.createAdjacent(point, currentMaterial)
   }
 })
-
-function ctrlToggle (ev) { erase = !ev.ctrlKey }
-window.addEventListener('keyup', ctrlToggle)
-window.addEventListener('keydown', ctrlToggle)
-
-module.exports = game
