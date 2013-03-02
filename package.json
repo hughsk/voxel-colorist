@@ -1,6 +1,6 @@
 {
   "name": "voxel-colorist",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Colour grading post-processing shader for voxel.js",
   "main": "index.js",
   "scripts": {
