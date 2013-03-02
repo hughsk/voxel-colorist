@@ -19,13 +19,14 @@ function Colorist(processor, options) {
 };
 
 Colorist.prototype.snapshot = function(original) {
-  var parent = game.renderer.domElement
+  var renderer = game.renderer || game.view.renderer
+    , parent = renderer.domElement
     , canvas = document.createElement('canvas')
     , ctx = canvas.getContext('2d')
     , image = new Image
 
   if (original) {
-    game.renderer.render(game.scene, game.camera)
+    renderer.render(game.scene, game.camera)
   } else {
     game.render()
   }
